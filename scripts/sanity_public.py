@@ -4,8 +4,10 @@ Prints the organiser's numbers for a submission CSV so we can check the pipeline
 correctly. Record the number; never tune, select or pick a version by it.
 
     python -I scripts/sanity_public.py [submission.csv] [--bootstrap N]
+    python -I scripts/sanity_public.py --check-baselines   # wrapper reproduces the organiser's reports
 """
 import argparse
+import json
 import os
 import sys
 
@@ -19,15 +21,37 @@ BANNER = """\
 ============================================================================="""
 
 
+def check_baselines(gt_path):
+    """Score the organiser's four published baselines (not our predictions) and compare with their reports."""
+    eval_dir = os.path.join(config.repo_dir(), "evaluation")
+    pm = evaluate.pm
+    gt = pm.label_codes(pm.read_label_csv(gt_path))
+    bad = 0
+    for name in ("raw", "smooth25", "smooth50", "smooth125"):
+        rep = json.load(open(os.path.join(eval_dir, "reports", "baseline_%s.json" % name)))
+        pred = pm.label_codes(pm.read_label_csv(os.path.join(eval_dir, "results", "baseline_%s.csv" % name)))
+        r = evaluate.score(pred, gt)  # via the packing wrapper
+        for k in ("spell_f1_mean", "macro_f1", "n_pred_spells", "n_gt_spells", "kappa"):
+            if round(abs(r[k] - rep[k]), 12) != 0:
+                bad += 1
+                print("MISMATCH {} {}: wrapper {} report {}".format(name, k, r[k], rep[k]))
+    print("baselines match organiser reports" if not bad else "{} mismatches".format(bad))
+    return 1 if bad else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("submission", nargs="?",
                     default=os.path.join(config.SOLUTION_DIR, "outputs", "submission.csv"))
     ap.add_argument("--bootstrap", type=int, default=0)
+    ap.add_argument("--check-baselines", action="store_true",
+                    help="check the scorer wrapper against the organiser's baseline reports, then exit")
     args = ap.parse_args(argv)
     print(BANNER)
     pm = evaluate.pm
     gt_path = os.path.join(config.repo_dir(), "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
+    if args.check_baselines:
+        return check_baselines(gt_path)
     gt = pm.label_codes(pm.read_label_csv(gt_path))
     table = pm.read_label_csv(args.submission)
     reason = pm.validate_submission(table, len(gt))

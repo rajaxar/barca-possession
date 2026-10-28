@@ -1,5 +1,5 @@
-"""Wrapper reproduces the organiser's reported baseline numbers; diagnostics and diff are consistent."""
-import json
+"""Scorer wrapper, diagnostics and diff are consistent. Never reads the public GT (the organiser-baseline
+check lives in scripts/sanity_public.py --check-baselines, GUARDRAILS 2)."""
 import os
 import unittest
 
@@ -8,7 +8,6 @@ import numpy as np
 from possession import config, data, evaluate
 
 EVAL = os.path.join(config.repo_dir(), "evaluation")
-GT = os.path.join(EVAL, "gt", "BAR-ATH_possession_gt_public.csv")
 METRICA = os.path.join(config.SOLUTION_DIR, "..", "external", "metrica", "labels", "game1_labels.csv")
 pm = evaluate.pm
 
@@ -45,18 +44,6 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(d["n_spells"], 3)
         self.assertEqual(d["flickers_lt_1s"], 1)  # 10 frames = 0.4 s
         self.assertEqual(d["n_d_stretches"], 1)
-
-
-@unittest.skipUnless(os.path.isfile(GT), "public GT not present")
-class BaselinesReproduce(unittest.TestCase):
-    def test_four_baselines_match_reports(self):
-        gt = pm.label_codes(pm.read_label_csv(GT))
-        for name in ("raw", "smooth25", "smooth50", "smooth125"):
-            rep = json.load(open(os.path.join(EVAL, "reports", "baseline_%s.json" % name)))
-            pred = pm.label_codes(pm.read_label_csv(os.path.join(EVAL, "results", "baseline_%s.csv" % name)))
-            r = evaluate.score(pred, gt)  # via the packing wrapper
-            for k in ("spell_f1_mean", "macro_f1", "n_pred_spells", "n_gt_spells", "kappa"):
-                self.assertAlmostEqual(r[k], rep[k], places=12, msg=(name, k))
 
 
 @unittest.skipUnless(os.path.isfile(METRICA), "Metrica labels not present")
