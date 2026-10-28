@@ -191,3 +191,104 @@ def format_diagnostics(d):
              "duration quantiles s " + " ".join("p{}={:.1f}".format(k, v) for k, v in q.items()),
              "duration hist " + " ".join("{}:{}".format(k, v) for k, v in d["spell_duration_hist"].items())]
     return "\n".join(lines)
+
+
+# -- paired comparison of two predictors on dev games (S14) ----------------------------------------
+
+def _spell_flags(pred, ref, runs):
+    """(flags[len(SPELL_IOUS), n_gt] bool, n_pred) for one game: matched-or-not per GT possession at
+    each IoU, exactly as the scorer's bootstrap builds them (X forward-filled first)."""
+    p, r, _, _ = _pack([(pred, ref, runs)])
+    pruns = pm.valid_runs(r)
+    gt = pm.possession_spells(r, pruns)
+    pr = pm.possession_spells(pm.fill_abstentions(p, pruns), pruns)
+    ov = pm.spell_overlaps(gt, pr)
+    flags = np.vstack([pm.matched_gt_flags(ov, len(gt), t) for t in pm.SPELL_IOUS])
+    return flags, len(pr)
+
+
+def _pooled_f1(tp, n_pred, n_gt):
+    """spell_f1_mean from summed counts. tp: (..., n_iou); n_pred, n_gt broadcast against tp[..., 0].
+    As the organiser's bootstrap, fp is clamped at 0 when a resample implies tp > n_pred."""
+    n_pred, n_gt = np.asarray(n_pred)[..., None], np.asarray(n_gt)[..., None]
+    fp = np.maximum(0, n_pred - tp)
+    den = 2 * tp + fp + (n_gt - tp)
+    return np.where(tp > 0, 2.0 * tp / np.maximum(den, 1), 0.0).mean(axis=-1)
+
+
+def _ci(delta, alpha):
+    lo, hi = np.percentile(delta, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    # two-sided bootstrap p: how often the resampled delta lies on the other side of zero
+    p = min(1.0, 2 * min(np.mean(delta <= 0), np.mean(delta >= 0)))
+    return {"low": float(lo), "high": float(hi), "p": float(p),
+            "significant": bool(lo > 0 or hi < 0)}
+
+
+def compare_dev(pred_fn_a, pred_fn_b, games, n=1000, seed=0, alpha=0.05):
+    """Paired bootstrap of delta = spellF1(A) - spellF1(B) over dev games (pooled over games, as
+    score_dev's "pooled"). `games` as in score_dev. Two resampling schemes, same draws for A and B:
+      possession: within every game, resample its GT possessions (stratified by game), same picks
+                  for both methods -> uncertainty from which possessions happened to be in the games;
+      game:       resample whole games (cluster bootstrap), observed per-game counts -> uncertainty
+                  from which games we have (the honest one when choosing methods for a new game).
+    The game scheme is meaningless below ~5 games; with fewer its CI is returned but `reliable` False.
+    Returns {"delta", "a", "b", "possession": {low, high, p, significant}, "game": {...},
+    "per_game_delta": {name: delta}, "n_games", "n_draws", "alpha"}. significant = CI excludes 0."""
+    rng = np.random.RandomState(seed)
+    names, fa, fb, npa, npb, ngt, per = [], [], [], [], [], [], {}
+    for i, g in enumerate(games):
+        if not isinstance(g, Game):
+            g = Game(*g) if len(g) >= 3 else Game("game{}".format(i), g[0], g[1])
+        ref = to_codes(g.ref)
+        fl = []
+        for fn in (pred_fn_a, pred_fn_b):
+            pred = to_codes(fn(g.match))
+            if len(pred) != len(ref):
+                raise ValueError("{}: pred length {} != ref {}".format(g.name, len(pred), len(ref)))
+            fl.append(_spell_flags(pred, ref, g.runs))
+        if fl[0][0].shape[1] == 0:
+            continue  # no GT possessions: contributes nothing
+        names.append(g.name)
+        fa.append(fl[0][0]); npa.append(fl[0][1])
+        fb.append(fl[1][0]); npb.append(fl[1][1])
+        ngt.append(fl[0][0].shape[1])
+    if not names:
+        raise ValueError("no games with GT possessions")
+    G = len(names)
+    npa, npb, ngt = np.array(npa), np.array(npb), np.array(ngt)
+    tpa = np.array([f.sum(axis=1) for f in fa])  # (G, n_iou)
+    tpb = np.array([f.sum(axis=1) for f in fb])
+
+    def pooled(ta, tb, sel=slice(None)):
+        a = _pooled_f1(ta, npa[sel].sum(-1), ngt[sel].sum(-1))
+        b = _pooled_f1(tb, npb[sel].sum(-1), ngt[sel].sum(-1))
+        return a, b
+
+    a0, b0 = pooled(tpa.sum(0), tpb.sum(0))
+    # possession bootstrap: stratified by game, shared picks
+    ta, tb = np.zeros((n, tpa.shape[1])), np.zeros((n, tpa.shape[1]))
+    for g in range(G):
+        picks = rng.randint(0, ngt[g], (n, ngt[g]))
+        ta += fa[g][:, picks].sum(axis=2).T
+        tb += fb[g][:, picks].sum(axis=2).T
+    a, b = _pooled_f1(ta, npa.sum(), ngt.sum()), _pooled_f1(tb, npb.sum(), ngt.sum())
+    poss = _ci(a - b, alpha)
+    # game bootstrap
+    gs = rng.randint(0, G, (n, G))
+    a, b = (_pooled_f1(tpa[gs].sum(1), npa[gs].sum(1), ngt[gs].sum(1)),
+            _pooled_f1(tpb[gs].sum(1), npb[gs].sum(1), ngt[gs].sum(1)))
+    game = _ci(a - b, alpha)
+    game["reliable"] = G >= 5
+    per_game = {nm: float(_pooled_f1(tpa[g], npa[g], ngt[g]) - _pooled_f1(tpb[g], npb[g], ngt[g]))
+                for g, nm in enumerate(names)}
+    return {"delta": float(a0 - b0), "a": float(a0), "b": float(b0), "possession": poss, "game": game,
+            "per_game_delta": per_game, "n_games": G, "n_draws": n, "alpha": alpha}
+
+
+def format_compare(res):
+    f = lambda k: "[{:+.3f}, {:+.3f}] p={:.3f}{}".format(
+        res[k]["low"], res[k]["high"], res[k]["p"], " *" if res[k]["significant"] else "")
+    return ("delta spellF1 {:+.4f} (A {:.4f}, B {:.4f}) over {} games\n  possession-paired {}\n"
+            "  game-cluster      {}{}").format(res["delta"], res["a"], res["b"], res["n_games"],
+                                              f("possession"), f("game"),
+                                              "" if res["game"]["reliable"] else "  (few games: unreliable)")
