@@ -11,7 +11,10 @@ import numpy as np
 
 from possession import config, data, degrade, external
 
-GAMES = external.list_games()
+# The degrader is fitted to 25 fps sources (S06/S17). SkillCorner games (10 fps, E25's loader)
+# enter list_games() but their degradation is not fitted, so the leak/kinematic assertions are
+# scoped to the fitted sources.
+GAMES = [g for g in external.list_games() if g.startswith(("idsse", "metrica"))]
 
 
 def synthetic_match(n=3000):
@@ -58,6 +61,23 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(np.isnan(out.B).any())
         self.assertTrue(np.isnan(out.BS).all())
 
+    def test_lowpass_never_crosses_gaps_or_halves(self):
+        n = 400
+        half = np.repeat(np.array([1, 2], np.int8), n // 2)
+        X = (np.sin(np.arange(n) / 4.0) + 0.3 * np.arange(n))[:, None] * np.ones((1, 2))
+        X[60:90] = np.nan    # gap inside half 1
+        X[230:260] = np.nan  # gap inside half 2
+        Y = degrade.lowpass(X, half, 8.0)
+        self.assertTrue(np.isnan(Y[60:90]).all())
+        self.assertTrue(np.isnan(Y[230:260]).all())
+        # every present run equals an independent smoothing of that run alone:
+        # nothing bleeds across a NaN gap or a half boundary (S17: smoothing must not mark D)
+        for s, e in ((0, 60), (90, 200), (200, 230), (260, 400)):
+            ref = degrade.lowpass(X[s:e], np.ones(e - s), 8.0)
+            np.testing.assert_allclose(Y[s:e], ref, atol=1e-9, err_msg="run %d:%d" % (s, e))
+        # and the output must actually be smoothed (not identity)
+        self.assertFalse(np.allclose(Y[0:59], X[0:59]))
+
 
 @unittest.skipUnless(os.path.isfile(config.asset_path("atd_raw")), "match data not present")
 class FittedTargets(unittest.TestCase):
@@ -75,9 +95,14 @@ class ExternalLeaks(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.results = {}
+        cls.kin = {}
         for game_id in GAMES:
-            game = degrade.degrade_game(external.load_game(game_id), seed=0)
+            clean = external.load_game(game_id)
+            game = degrade.degrade_game(clean, seed=0)
             cls.results[game_id] = degrade.leak_stats(game.match, game.ref, game.runs, n_null=0)
+            # (degraded all-graded, clean alive) dv stats; the clean alive ball still separates
+            alive = clean.match.graded & (np.asarray(clean.ref) != "D") & (clean.match.half > 0)
+            cls.kin[game_id] = (_dv_stats(game.match), _dv_stats(clean.match, alive))
 
     def test_frozen_and_nan_share_equal_in_dead_and_alive(self):
         diffs = []
@@ -107,6 +132,69 @@ class ExternalLeaks(unittest.TestCase):
                     self.assertLess(abs(r[name]["auc"] - 0.5), 0.22, name)
                     self.assertLess(abs(r[name]["auc"] - 0.5),
                                     abs(r["player_speed_mean"]["auc"] - 0.5), name)
+
+    def test_smoothing_reproduces_atd_kinematics(self):
+        # S17: the vendor low-pass must make the degraded ball kinematics-blind like the ATD
+        # (E18: separation ~0.95 ATD, ~1.65 IDSSE sigma=8, 3.5-4.7 clean alive IDSSE).
+        degraded = np.array([self.kin[g][0] for g in self.kin])
+        clean = np.array([self.kin[g][1] for g in self.kin])
+        med, near, free, sep, jit = (np.nanmedian(degraded, 0) if degraded.shape[0] else
+                                     [np.nan] * 5)
+        self.assertGreater(med, 0.35)
+        self.assertLess(med, 0.9)             # ATD 0.59 m/s
+        self.assertGreater(near, 0.7)
+        self.assertLess(near, 2.6)            # ATD 1.96 m/s
+        self.assertLess(sep, 1.7)             # ATD 0.95; clean alive IDSSE 3.5-4.7
+        self.assertLess(jit, 10.0)            # ATD 1-5 mm; clean IDSSE ~10-50 mm
+        csep = np.nanmedian(clean[:, 3]) if len(clean) else np.nan
+        self.assertGreater(csep, 2.5)         # the contrast: clean ball still separates
+
+
+def _dv_stats(match, keep=None):
+    """(dv median, q90 dv within 1.5 m of a player, q90 dv in free flight, separation, jitter mm).
+    Mirrors E18 a7 / scratch/S17/kin.dv_stats with w=3; jitter from MAD of second differences."""
+    keep = np.ones(len(match.B), bool) if keep is None else keep
+    n = len(match.B)
+    dv = np.full(n, np.nan)
+    near = np.full(n, np.inf)
+    B = np.where(keep[:, None], match.B, np.nan)
+    d2s = []
+    for h in (1, 2):
+        idx = np.flatnonzero(match.half == h)
+        if not len(idx):
+            continue
+        a0 = idx[0]
+        c = B[idx].astype(float)
+        step = np.r_[np.zeros((1, 2)), np.diff(c, axis=0)]
+        c[np.linalg.norm(step, axis=1) > 40 / degrade.FPS] = np.nan  # drop implausible jumps
+        for a, b in degrade._runs(~np.isnan(c[:, 0])):
+            if b - a < max(9, 7):
+                continue
+            seg = c[a:b]
+            vin = (seg[3:-3] - seg[:-6]) * degrade.FPS / 3
+            vout = (seg[6:] - seg[3:-3]) * degrade.FPS / 3
+            rows = a0 + a + np.arange(3, b - a - 3)
+            dv[rows] = np.linalg.norm(vout - vin, axis=1)
+            d = np.linalg.norm(match.P[rows] - match.B[rows][:, None, :], axis=-1)
+            d = np.where(np.isnan(d), np.inf, d)
+            near[rows] = d.min(1)
+            if b - a < 50:
+                continue
+            sp = np.linalg.norm(seg[2:] - seg[:-2], axis=1) * degrade.FPS / 2
+            k = sp < 3
+            if k.sum() < 10:
+                continue
+            dd = seg[2:] - 2 * seg[1:-1] + seg[:-2]
+            med = np.median(dd[k], axis=0)
+            d2s.append(1.4826 * np.median(np.abs(dd[k] - med), axis=0).mean() / np.sqrt(6) * 1000)
+    free = np.isfinite(dv) & (near > 5)
+    nr = np.isfinite(dv) & (near <= 1.5)
+    if not free.any() or not nr.any():
+        return (np.nan, np.nan, np.nan, np.nan, np.nan)
+    return (float(np.median(dv[free])), float(np.quantile(dv[nr], 0.9)),
+            float(np.quantile(dv[free], 0.9)),
+            float(np.quantile(dv[nr], 0.9) / np.quantile(dv[free], 0.9)),
+            float(np.median(d2s)) if d2s else np.nan)
 
 
 if __name__ == "__main__":

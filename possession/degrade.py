@@ -11,10 +11,18 @@ looks like the BAR-ATH tactical ATD to a possession model, with ``ref`` and ``ru
    centroid, copied from random alive stretches of the same half, integrated from the last observed
    ball and linearly bridged onto the next one; a speed-capped follower then pulls it towards the
    nearest player, so it sits at players' feet like an alive ball. No frozen ball, NaN or teleport
-   marks a D frame. Residual (research/S06): D balls are slower than alive ones (AUC ~0.33),
-   because they follow players who walk in dead time.
+   marks a D frame. A bounded carry-like wander (S17, ``wobble_*``) adds independent motion, because
+   on the ATD a stopped ball is nudged around rather than glued to a walker's foot; its amplitude
+   scales with the game's own alive ball pace (``wobble_pace_ref``), like ball speed scales with
+   play speed on the ATD.
+1b. **Vendor low-pass** (S17/E18). A Gaussian low-pass (σ ≈ 8 frames) over the ball and every player
+   track, applied within each half and within present stretches only — never across NaN gaps or half
+   boundaries. The ATD ball and players carry this filter (E18), and it is what kills kinematic
+   touch detection on the dev set. Smoothing runs before dropout/re-slotting, like a vendor filter
+   over continuous tracking; the dropout gap pattern is drawn afterwards and is label-independent.
 2. **Ball noise**: a smooth AR(1) offset (decouples Metrica's player-snapped ball from the
-   possessor's feet), white jitter, and short false detections (frame-to-frame jumps > 40 m/s).
+   possessor's feet), white jitter at the ATD's mm scale, and short false detections (frame-to-frame
+   jumps > 40 m/s).
 3. **Ball dropout** in long blocks: alternating present runs and gaps, both drawn from our ATD
    run-length histograms, independent of labels and of position. (ATD presence is lower when play
    is near a goal line, but D also concentrates there, so a spatial dropout bias makes "ball
@@ -35,6 +43,7 @@ only level 1 is fitted.
 import zlib
 
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 from scipy.signal import lfilter
 
 from . import data, evaluate, external
@@ -54,11 +63,20 @@ ATD_SEG_Q = (8, 42, 65, 92, 140, 194, 244, 317, 427, 618, 873, 1192, 1582, 2140,
 PARAMS = dict(
     # leak scrub: pull of the rebuilt ball towards the nearest player (0-1), ramp-in at the run
     # edges (frames), and the speed cap of the ball following its target (m/s)
-    scrub_pull=0.85, scrub_pull_tau=10, scrub_pull_vmax=20.0,
+    scrub_pull=0.9, scrub_pull_tau=10, scrub_pull_vmax=20.0,
+    # D-ball wobble (S17): independent carry-like wander on rebuilt frames (m/s OU velocity,
+    # position leash time constant (frames), position cap (m), edge ramp (frames); 0 = off).
+    # The velocity std is scaled to the game's own alive pace (see wobble_pace_ref) so the D
+    # ball is not uniformly slow on fast games -- the ATD coupling curve says ball speed scales
+    # with play speed. A per-game scalar cannot mark D frames.
+    wobble_sigma_v=3.0, wobble_tau_v=20.0, wobble_tau_p=20.0, wobble_cap=3.0, wobble_edge_tau=10.0,
+    wobble_pace_ref=6.15, wobble_pace_range=(0.8, 1.3),
     # ball dropout: present-run shortening near the goal lines (see ball_dropout)
     drop_zone_gamma=0.0, drop_zone_ref=0.3,
+    # vendor low-pass (E18/S17): Gaussian sigma (frames) on ball and players, fitted to ATD velocity PSD
+    smooth_ball_sigma=8.0, smooth_player_sigma=8.0,
     # ball noise: AR(1) offset (m, frames), white jitter (m), false detections (per frame, frames, m)
-    ball_ar_tau=50, ball_ar_sigma=0.4, ball_white_sigma=0.02,
+    ball_ar_tau=50, ball_ar_sigma=0.4, ball_white_sigma=0.0005,
     ball_false_rate=8e-4, ball_false_max_len=3, ball_false_m=(2.0, 15.0),
     # player tracks: slots per team, segment length multiplier (cuts at clean track ends shorten
     # segments), P(untracked gap at a segment cut), mean gap (frames),
@@ -134,7 +152,30 @@ def _centroid(P):
 
 # ---------------------------------------------------------------- 1. leak scrub
 
-def scrub_ball(B, P, half, invalid, rng, pull=0.0, pull_tau=10, pull_vmax=30.0):
+def _wobble_run(L, sigma_v, tau_v, tau_p, cap, edge_tau, rng):
+    """Bounded carry-like wander for one rebuilt run (S17): OU velocity (std ``sigma_v`` m/s,
+    time constant ``tau_v`` frames), position offset leashed to 0 with time constant ``tau_p``,
+    hard-capped at ``cap`` m and ramped to 0 at both run ends. Returns (L, 2)."""
+    phi = np.exp(-1.0 / tau_v)
+    k = 1.0 / tau_p
+    v = np.empty((L, 2))
+    v[0] = rng.normal(0, sigma_v, 2)
+    for i in range(1, L):
+        v[i] = phi * v[i - 1] + rng.normal(0, sigma_v * np.sqrt(1 - phi * phi), 2)
+    x = np.empty((L, 2))
+    x[0] = v[0] / FPS
+    for i in range(1, L):
+        x[i] = x[i - 1] + v[i] / FPS - k * x[i - 1]
+    norm = np.linalg.norm(x, axis=1)
+    x = x * (np.minimum(norm, cap) / np.maximum(norm, 1e-9))[:, None]
+    kk = np.arange(L)
+    w = np.minimum(1.0, np.minimum(kk + 1, L - kk) / edge_tau)
+    return x * w[:, None]
+
+
+def scrub_ball(B, P, half, invalid, rng, pull=0.0, pull_tau=10, pull_vmax=30.0,
+               wobble_sigma_v=0.0, wobble_tau_v=20.0, wobble_tau_p=20.0, wobble_cap=3.0,
+               wobble_edge_tau=10.0):
     """Rebuild the ball on ``invalid`` frames from donor alive motion relative to the centroid."""
     out = B.astype(np.float64).copy()
     C = _centroid(P)
@@ -186,9 +227,36 @@ def scrub_ball(B, P, half, invalid, rng, pull=0.0, pull_tau=10, pull_vmax=30.0):
                 k = np.arange(L)
                 w = np.minimum(1.0, np.minimum(k + 1, L - k) / pull_tau)
                 x = x + w[:, None] * (y - x)
+            if wobble_sigma_v > 0:  # S17: independent carry-like wander of the rebuilt ball
+                x = x + _wobble_run(L, wobble_sigma_v, wobble_tau_v, wobble_tau_p, wobble_cap,
+                                    wobble_edge_tau, rng)
             rel[a + s:a + e] = x - C[a + s:a + e]
         out[a:b] = rel[a:b] + C[a:b]
     return out
+
+
+# ---------------------------------------------------------------- 1b. vendor low-pass
+
+def lowpass(X, half, sigma):
+    """Gaussian low-pass (``sigma`` frames) along time within each half and each run of finite
+    rows of ``X`` (n, ...); never across a NaN gap or a half boundary."""
+    out = np.array(X, np.float64)
+    if sigma <= 0:
+        return out
+    finite = np.isfinite(out.reshape(len(out), -1)).all(axis=1)
+    for _, a, b in _halves(half):
+        for s, e in _runs(finite[a:b]) + a:
+            out[s:e] = gaussian_filter1d(out[s:e], sigma, axis=0, mode="nearest")
+    return out
+
+
+def lowpass_players(P, V, half, sigma):
+    """``lowpass`` on every player track (positions and speeds) separately."""
+    P2, V2 = P.copy(), V.copy()
+    for s in range(P.shape[1]):
+        P2[:, s] = lowpass(P[:, s], half, sigma)
+        V2[:, s] = lowpass(np.where(np.isnan(P[:, s, 0]), np.nan, V[:, s]), half, sigma)
+    return P2, V2
 
 
 # ---------------------------------------------------------------- 2-3. ball noise and dropout
@@ -197,7 +265,9 @@ def ball_noise(B, half, rng, p, level):
     out = B.copy()
     for _, a, b in _halves(half):
         n = b - a
-        out[a:b] += _ar1(n, p["ball_ar_tau"], p["ball_ar_sigma"] * level, rng)
+        # the vendor filter smooths tracking errors too: the slow offset gets the same low-pass
+        out[a:b] += lowpass(_ar1(n, p["ball_ar_tau"], p["ball_ar_sigma"] * level, rng), np.ones(n),
+                            p["smooth_ball_sigma"] * level)
         out[a:b] += rng.normal(0, p["ball_white_sigma"] * level, (n, 2))
         k = rng.poisson(p["ball_false_rate"] * level * n)
         for t in rng.integers(a, b, k):
@@ -292,7 +362,8 @@ def player_tracks(P, V, T, gk, half, rng, p, level):
                     continue
                 ang = rng.uniform(0, 2 * np.pi)
                 off = rng.uniform(*p["ghost_offset_m"]) * np.array([np.cos(ang), np.sin(ang)])
-                off = off + _ar1(stop - start, FPS, p["ghost_drift_m"], rng)
+                off = off + lowpass(_ar1(stop - start, FPS, p["ghost_drift_m"], rng), np.ones(stop - start),
+                                    p["smooth_player_sigma"] * level)
                 P2[start:stop, base + j] = P2[start:stop, src] + off
                 V2[start:stop, base + j] = V2[start:stop, src]
                 free[j] = stop
@@ -322,11 +393,21 @@ def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH):
     rng = np.random.default_rng(seed)
     n = len(match.B)
     dead = np.zeros(n, bool) if dead is None else np.asarray(dead, bool)
+    wob = p["wobble_sigma_v"]
+    if wob > 0 and p.get("wobble_pace_ref"):
+        # per-game pace (label-free on our ATD; uses the external D mask like the donor pool does)
+        sp = _ball_speed(match.B, match.half)
+        alive = ~dead & np.isfinite(match.B[:, 0]) & np.isfinite(sp)
+        pace = np.median(sp[alive]) if alive.any() else p["wobble_pace_ref"]
+        wob = wob * float(np.clip(pace / p["wobble_pace_ref"], *p["wobble_pace_range"]))
     B = scrub_ball(match.B, match.P, match.half, dead, rng, p["scrub_pull"],
-                   p["scrub_pull_tau"], p["scrub_pull_vmax"])
+                   p["scrub_pull_tau"], p["scrub_pull_vmax"], wob,
+                   p["wobble_tau_v"], p["wobble_tau_p"], p["wobble_cap"], p["wobble_edge_tau"])
+    B = lowpass(B, match.half, p["smooth_ball_sigma"] * level)
     B = ball_noise(B, match.half, rng, p, level)
     B = ball_dropout(B, match.P, match.half, rng, p, level, pitch)
-    P, V, T = player_tracks(match.P, match.V, match.T, match.gk, match.half, rng, p, level)
+    P, V = lowpass_players(match.P, match.V, match.half, p["smooth_player_sigma"] * level)
+    P, V, T = player_tracks(P, V, match.T, match.gk, match.half, rng, p, level)
     BS = ball_s_channel(n, match.half, rng, p, level)
     gk = external._goalkeepers(P, T, match.half, pitch[0])
     return data.Match(P=P, V=V, T=T, B=B.astype(np.float32), BS=BS, gk=gk,
