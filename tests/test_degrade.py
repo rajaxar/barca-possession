@@ -5,6 +5,7 @@ every degraded IDSSE/Metrica game the ball's frozen share and NaN share are the 
 frames, the IDSSE teleport at D end is gone, and single ball features stay far from separating D.
 """
 import os
+import hashlib
 import unittest
 
 import numpy as np
@@ -15,6 +16,39 @@ from possession import config, data, degrade, external
 # enter list_games() but their degradation is not fitted, so the leak/kinematic assertions are
 # scoped to the fitted sources.
 GAMES = [g for g in external.list_games() if g.startswith(("idsse", "metrica"))]
+
+
+def _digest(*arrays):
+    """Stable sha256 of one or more arrays (dtype + size + bytes), for byte-identity tests."""
+    h = hashlib.sha256()
+    for x in arrays:
+        x = np.asarray(x)
+        h.update(x.dtype.str.encode())
+        h.update(b"%d" % x.size)
+        h.update(np.ascontiguousarray(x).tobytes())
+    return h.hexdigest()
+
+
+# S17 output recorded *before* the S21 knob existed (scratch/S21/golden.py, 2026-10-28):
+# degrade() with d_ball_visible=0 must reproduce these byte-identically.
+GOLDEN_SYNTHETIC = "b22147dcdb3051ccedc8dbb6fb14e998fe436d24b7c4924cb7ca2dc080feab47"
+GOLDEN_GAMES = {
+    "idsse:DFL-MAT-J03WMX": ("58ffccfd5839266c0503df1d06883982924e52d94e7fba1602a37b81c946c3a6",
+                             "8ab79425a45db73239774a88f80126a48b21c3c99c6af9ea7256ac0a2ec59aba"),
+    "metrica:game1": ("99dd0b8cabfc6069063ac8a10405136f0aa36beaff7d499ae6b881e685cd2e0f",
+                      "cc032e1bf1948622776b8f21f208583f7ca1e9fd39d046d01c5677a7eb202db1"),
+}
+
+
+def _pooled_keeper_auc(records):
+    """Frame-pooled AUC of the E38 keeper-geometry feature across games (binary feature:
+    AUC = p_d*(1-p_a) + 0.5*(p_d*p_a + (1-p_d)*(1-p_a)))."""
+    fd = sum(r["keeper_d"] * r["n_d"] for r in records)
+    fa = sum(r["keeper_alive"] * r["n_alive"] for r in records)
+    nd = sum(r["n_d"] for r in records)
+    na = sum(r["n_alive"] for r in records)
+    fd, fa = fd / nd, fa / na
+    return fd * (1 - fa) + 0.5 * (fd * fa + (1 - fd) * (1 - fa))
 
 
 def synthetic_match(n=3000):
@@ -78,6 +112,30 @@ class Synthetic(unittest.TestCase):
         # and the output must actually be smoothed (not identity)
         self.assertFalse(np.allclose(Y[0:59], X[0:59]))
 
+    def test_d_ball_visible_zero_is_byte_identical_s17(self):
+        m, dead = synthetic_match()
+        out = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.0)
+        self.assertEqual(_digest(out.B, out.P, out.V, out.T, out.BS), GOLDEN_SYNTHETIC)
+
+    def test_d_ball_visible_determinism_and_alive_invariance(self):
+        m, dead = synthetic_match()
+        outs = {v: degrade.degrade(m, seed=3, dead=dead, d_ball_visible=v)
+                for v in (0.0, 0.5, 1.0)}
+        a = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.5)
+        for x, y in zip(a, outs[0.5]):  # determinism at the same (seed, knob)
+            np.testing.assert_array_equal(x, y)
+        for v in (0.0, 0.5, 1.0):  # the knob touches only D frames: everything else identical
+            for f in ("P", "V", "T", "BS", "half"):
+                np.testing.assert_array_equal(getattr(outs[v], f), getattr(outs[0.0], f))
+            np.testing.assert_array_equal(outs[v].B[~dead], outs[0.0].B[~dead])
+        self.assertFalse(np.isnan(outs[1.0].B[dead]).any())  # v=1: whole stoppage tracked
+        self.assertFalse(np.array_equal(degrade.degrade(m, seed=4, dead=dead,
+                                                        d_ball_visible=0.5).B[dead],
+                                        outs[0.5].B[dead], equal_nan=True))  # seed changes D ball
+        self.assertTrue(np.array_equal(outs[0.5].B[dead], outs[0.5].B[dead], equal_nan=True))
+        with self.assertRaises(ValueError):
+            degrade.degrade(m, seed=3, dead=dead, d_ball_visible=1.5)
+
 
 @unittest.skipUnless(os.path.isfile(config.asset_path("atd_raw")), "match data not present")
 class FittedTargets(unittest.TestCase):
@@ -96,6 +154,7 @@ class ExternalLeaks(unittest.TestCase):
     def setUpClass(cls):
         cls.results = {}
         cls.kin = {}
+        cls.keeper = {}
         for game_id in GAMES:
             clean = external.load_game(game_id)
             game = degrade.degrade_game(clean, seed=0)
@@ -103,6 +162,28 @@ class ExternalLeaks(unittest.TestCase):
             # (degraded all-graded, clean alive) dv stats; the clean alive ball still separates
             alive = clean.match.graded & (np.asarray(clean.ref) != "D") & (clean.match.half > 0)
             cls.kin[game_id] = (_dv_stats(game.match), _dv_stats(clean.match, alive))
+            # E38 keeper-geometry feature on the v=0 (S17) degraded ball
+            dead = np.asarray(game.ref) == "D"
+            scored = np.zeros(len(dead), bool)
+            for a, b in game.runs:
+                scored[a:b] = True
+            f = degrade.keeper_ball_feature(game.match)
+            cls.keeper[game_id] = dict(
+                keeper_d=float(f[scored & dead].mean()),
+                keeper_alive=float(f[scored & ~dead].mean()),
+                n_d=int((scored & dead).sum()), n_alive=int((scored & ~dead).sum()))
+
+    def test_d_ball_visible_zero_is_byte_identical_s17(self):
+        # golden hashes recorded before the knob existed (scratch/S21/golden.py)
+        for game_id, (b, p) in GOLDEN_GAMES.items():
+            with self.subTest(game=game_id):
+                d = degrade.degrade_game(external.load_game(game_id), seed=0)
+                self.assertEqual(_digest(d.match.B), b)
+                self.assertEqual(_digest(d.match.P, d.match.V, d.match.T, d.match.BS), p)
+
+    def test_keeper_geometry_does_not_separate_dead_at_v0(self):
+        # E38: the S17 rebuilt D ball must not manufacture keeper-hold geometry at v=0 either.
+        self.assertLessEqual(_pooled_keeper_auc(list(self.keeper.values())), 0.55)
 
     def test_frozen_and_nan_share_equal_in_dead_and_alive(self):
         diffs = []
@@ -148,6 +229,102 @@ class ExternalLeaks(unittest.TestCase):
         self.assertLess(jit, 10.0)            # ATD 1-5 mm; clean IDSSE ~10-50 mm
         csep = np.nanmedian(clean[:, 3]) if len(clean) else np.nan
         self.assertGreater(csep, 2.5)         # the contrast: clean ball still separates
+
+
+@unittest.skipIf(len(GAMES) < 3, "external dev games not on disk")
+class S21BallVisibility(unittest.TestCase):
+    """S21: d_ball_visible > 0. Rate matches the knob; frozen/teleport stay clean; the E38
+    keeper-geometry feature does not separate D; motion channels stay directional (the D ball is
+    a resting, spot-placed ball: slower than alive and farther from players -- never frozen, never
+    glued to a stationary defender)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rec = {}
+        for game_id in GAMES:
+            clean = external.load_game(game_id)
+            for v in (0.5, 1.0):
+                for seed in (0, 1):
+                    game = degrade.degrade_game(clean, seed=seed, d_ball_visible=v)
+                    dead = np.asarray(game.ref) == "D"
+                    scored = np.zeros(len(dead), bool)
+                    for a, b in game.runs:
+                        scored[a:b] = True
+                    f = degrade.keeper_ball_feature(game.match)
+                    cls.rec[(game_id, v, seed)] = dict(
+                        game=game, dead=dead, scored=scored,
+                        leak=degrade.leak_stats(game.match, game.ref, game.runs, n_null=0),
+                        keeper_d=float(f[scored & dead].mean()),
+                        keeper_alive=float(f[scored & ~dead].mean()),
+                        n_d=int((scored & dead).sum()), n_alive=int((scored & ~dead).sum()))
+
+    def test_presence_rate_matches_knob(self):
+        pa_by_v = {}
+        for v in (0.5, 1.0):
+            for seed in (0, 1):
+                pd = np.mean([np.isfinite(self.rec[(g, v, seed)]["game"].match.B
+                                          [self.rec[(g, v, seed)]["scored"]
+                                           & self.rec[(g, v, seed)]["dead"], 0]).mean()
+                              for g in GAMES])
+                pa = np.mean([np.isfinite(self.rec[(g, v, seed)]["game"].match.B
+                                          [self.rec[(g, v, seed)]["scored"]
+                                           & ~self.rec[(g, v, seed)]["dead"], 0]).mean()
+                              for g in GAMES])
+                pa_by_v[(v, seed)] = pa
+                with self.subTest(v=v, seed=seed):
+                    self.assertAlmostEqual(pd, v, delta=0.12)  # the knob IS P(present | D)
+        # alive side untouched by the knob: equal presence across settings per seed
+        for seed in (0, 1):
+            self.assertAlmostEqual(pa_by_v[(0.5, seed)], pa_by_v[(1.0, seed)], delta=1e-9)
+        # alive frames byte-identical across knob settings for the same seed
+        for game_id in GAMES:
+            for seed in (0, 1):
+                a = self.rec[(game_id, 0.5, seed)]["game"].match
+                b = self.rec[(game_id, 1.0, seed)]["game"].match
+                alive = ~self.rec[(game_id, 0.5, seed)]["dead"]
+                np.testing.assert_array_equal(a.B[alive], b.B[alive])
+                for f in ("P", "V", "T", "BS"):
+                    np.testing.assert_array_equal(getattr(a, f), getattr(b, f))
+
+    def test_no_frozen_or_teleport_at_any_setting(self):
+        for v in (0.5, 1.0):
+            for seed in (0, 1):
+                frozen = [self.rec[(g, v, seed)]["leak"]["ball_frozen"]["auc"] for g in GAMES]
+                tel = [self.rec[(g, v, seed)]["leak"]["teleport"]["d_end_fast"] for g in GAMES]
+                with self.subTest(v=v, seed=seed):
+                    self.assertLess(max(abs(a - 0.5) for a in frozen), 0.07)
+                    self.assertLess(max(tel), 0.05)  # clean IDSSE: 0.87-0.93
+
+    def test_keeper_geometry_does_not_separate_dead(self):
+        # E38: a stationary keeper near his own goal with the ball at his feet is live play; the
+        # restart-placed D ball must not manufacture it (pooled AUC over games, both knob seeds).
+        for v in (0.5, 1.0):
+            for seed in (0, 1):
+                auc = _pooled_keeper_auc([self.rec[(g, v, seed)] for g in GAMES])
+                with self.subTest(v=v, seed=seed):
+                    self.assertLessEqual(auc, 0.55)
+
+    def test_restart_ball_motion_is_directional(self):
+        # The visible D ball is a resting, spot-placed ball: slower than an alive ball (but never
+        # frozen: it rolls/wobbles), and no closer to players than an alive ball (never carried by
+        # a stationary defender -- the E38 inverse hazard). Pooled over games and knob seeds.
+        for v in (0.5, 1.0):
+            for seed in (0, 1):
+                sp_auc = np.mean([self.rec[(g, v, seed)]["leak"]["ball_speed"]["auc"]
+                                  for g in GAMES])
+                sp_d = np.mean([self.rec[(g, v, seed)]["leak"]["ball_speed"]["d_mean"]
+                                for g in GAMES])
+                ne_auc = np.mean([self.rec[(g, v, seed)]["leak"]["nearest_player_m"]["auc"]
+                                  for g in GAMES])
+                ne_d = np.mean([self.rec[(g, v, seed)]["leak"]["nearest_player_m"]["d_mean"]
+                                for g in GAMES])
+                ne_a = np.mean([self.rec[(g, v, seed)]["leak"]["nearest_player_m"]["alive_mean"]
+                                for g in GAMES])
+                with self.subTest(v=v, seed=seed):
+                    self.assertGreaterEqual(sp_auc, 0.15)          # not a frozen ball (AUC ~0)
+                    self.assertGreaterEqual(sp_d, 2.0)             # rolling/placed, not static
+                    self.assertLessEqual(ne_auc, 0.85)             # not glued to players
+                    self.assertGreaterEqual(ne_d, ne_a)            # never at their feet
 
 
 def _dv_stats(match, keep=None):

@@ -33,6 +33,10 @@ looks like the BAR-ATH tactical ATD to a possession model, with ``ref`` and ``ru
    team). Goalkeepers keep one slot per team, with short gaps.
 5. **Ball s channel**: ATD's unexplained ``BS`` is emulated as random runs of smooth values,
    independent of everything else (the external ``BS`` is the vendor ball speed, a D leak).
+6. **D-ball visibility** (S21, ``d_ball_visible``, default 0 = off = S17 exactly). At >0, D frames
+   get a restart-placed ball (stoppage spot -> restart point glide, pace-scaled wobble, keeper
+   exclusion zone, E38) visible on a share ``d_ball_visible`` of D frames in semi-Markov runs;
+   the rest of the D frames are NaN. Alive frames never change across knob settings.
 
 Every distribution and rate is fitted to label-free statistics of our own ATD input
 (:func:`input_stats` on ``data.load_match()``); no ground truth of any game is read. The fitted
@@ -87,6 +91,19 @@ PARAMS = dict(
     bs_rate=1.83e-4, bs_median=1.13, bs_max=7.27,
     bs_run_q=(5, 21, 47, 67, 76, 80, 87, 104, 122, 131, 163, 192, 211, 226, 334, 420, 444, 488, 601,
               952, 7042),
+    # S21 D-ball visibility (0..1): the share of D frames in which the ball is tracked. 0 = off,
+    # the pipeline is exactly S17. >0: D frames get a restart-placed ball (restart_ball): the ball
+    # sits at the stoppage spot (last observed position before the run), glides onto the restart
+    # point (first observed position after it) over the final `restart_glide_s`, carries the
+    # pace-scaled S17 wobble (never frozen, coupling-consistent frame speeds), and is kept out of
+    # a `restart_keeper_r` m zone around any plausible goalkeeper (E38: a keeper hold is live; the
+    # dev set must not manufacture that geometry on D frames). The exclusion fades in/out at the
+    # run edges so the ball leaves/meets the observed track without a jump. Each D run is visible
+    # (IDSSE-like) with probability `d_ball_visible` and NaN throughout (Metrica-like) otherwise,
+    # so the expected share of D frames with a tracked ball is exactly the knob. Alive frames and
+    # every non-ball channel are byte-identical across settings for the same seed.
+    d_ball_visible=0.0, restart_glide_s=8.0, restart_fade_s=2.0, restart_keeper_r=2.0,
+    restart_keeper_from_goal=45.0,
 )
 
 
@@ -232,6 +249,128 @@ def scrub_ball(B, P, half, invalid, rng, pull=0.0, pull_tau=10, pull_vmax=30.0,
                                     wobble_edge_tau, rng)
             rel[a + s:a + e] = x - C[a + s:a + e]
         out[a:b] = rel[a:b] + C[a:b]
+    return out
+
+
+def _keeper_positions(P, T, gk, half, pitch, from_goal):
+    """(N, 2, 2) positions of each team's goalkeeper on frames where it is plausible: within
+    ``from_goal`` m of its own goal (own goal = median keeper x per half, the E30 slot-reuse
+    guard), else NaN. Used by the S21 restart-ball keeper exclusion and the E38 test feature."""
+    out = np.full((len(P), 2, 2), np.nan)
+    for h in (1, 2):
+        idx = np.flatnonzero(half == h)
+        if not len(idx):
+            continue
+        for team in (0, 1):
+            s = int(gk[h - 1, team])
+            x = P[:, s, 0]
+            if np.isfinite(x[idx]).sum() < 0.25 * len(idx):
+                continue
+            goal_x = np.nanmedian(x[idx])
+            ok = np.isfinite(x) & np.isfinite(P[:, s, 1]) & (np.abs(x - goal_x) <= from_goal)
+            out[ok, team] = P[ok, s]
+    return out
+
+
+def _visible_runs(L, visible, rng):
+    """S21: one visibility draw per D run. The whole run is visible (a single (0, L) run) with
+    probability ``visible``, else no visible frames. So each stoppage is IDSSE-like (ball tracked
+    throughout) with probability ``visible`` and Metrica-like (ball untracked throughout)
+    otherwise, and the expected share of D frames with a tracked ball is exactly ``visible``."""
+    if visible >= 1.0:
+        return [(0, L)]
+    if visible <= 0.0 or not rng.random() < visible:
+        return []
+    return [(0, L)]
+
+
+def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITCH):
+    """S21: restart-placed D ball at visibility ``visible`` (0..1). Per D run the ball sits at the
+    stoppage spot (last observed position before the run; if none, the restart point; if none, the
+    player centroid), glides onto the restart point (first observed position after the run) over
+    the final ``restart_glide_s`` seconds, and is animated by the pace-scaled S17 wobble -- so it
+    never freezes, keeps coupling-consistent frame speeds, and meets the observed alive track with
+    no jump at either edge. A keeper exclusion keeps the ball at least ``restart_keeper_r`` m from
+    any plausible goalkeeper, faded in/out at the run edges (E38: the dev set must not manufacture
+    keeper-hold geometry on D frames). Each D run is visible (IDSSE-like) with probability
+    ``visible`` and NaN throughout (Metrica-like) otherwise; the expected share of D frames with a
+    tracked ball is exactly ``visible``. Frames outside ``dead`` are untouched, so alive frames
+    are identical across knob settings for the same seed."""
+    out = B.copy()
+    fade = max(1, int(round(p["restart_fade_s"] * FPS)))
+    keeper_r = float(p["restart_keeper_r"])
+    glide_fr = max(1, int(round(p["restart_glide_s"] * FPS)))
+    K = _keeper_positions(P, T, gk, half, pitch, p["restart_keeper_from_goal"])
+    # last/first observed ball index per frame, within each half (post-dropout B)
+    finite = np.isfinite(B[:, 0])
+    last = np.full(len(B), -1, np.int64)
+    first = np.full(len(B), len(B), np.int64)
+    for h in (1, 2):
+        idx = np.flatnonzero(half == h)
+        if not len(idx):
+            continue
+        lf = np.where(finite[idx], idx, -1)
+        np.maximum.accumulate(lf, out=lf)
+        last[idx] = lf
+        bf = np.where(finite[idx][::-1], idx[::-1], len(B))
+        np.minimum.accumulate(bf, out=bf)
+        first[idx] = bf[::-1]
+    C = _centroid(P)
+    for s, e in _runs(dead):
+        L = e - s
+        spot_i = last[s - 1] if s > 0 else -1
+        if spot_i < 0 or half[spot_i] != half[s]:
+            spot_i = -1
+        rest_i = first[e] if e < len(B) else len(B)
+        if rest_i >= len(B) or half[rest_i] != half[s]:
+            rest_i = -1
+        spot = B[spot_i].astype(float) if spot_i >= 0 else np.full(2, np.nan)
+        rest = B[rest_i].astype(float) if rest_i >= 0 else np.full(2, np.nan)
+        if not np.isfinite(spot).all():
+            spot = rest if np.isfinite(rest).all() else C[s]
+        if not np.isfinite(rest).all():
+            rest = spot
+        ramp = np.clip((np.arange(L) - (L - glide_fr)) / glide_fr, 0.0, 1.0)
+        path = spot + (rest - spot) * ramp[:, None]
+        path = path + _wobble_run(L, wob_sigma, p["wobble_tau_v"], p["wobble_tau_p"],
+                                  p["wobble_cap"], p["wobble_edge_tau"], rng)
+        # keeper exclusion, faded at the run edges so the ball still meets the observed track
+        w = np.minimum(1.0, np.minimum(np.arange(L) + 1, L - np.arange(L)) / fade)
+        for team in (0, 1):
+            kp = K[s:e, team]
+            d = np.linalg.norm(path - kp, axis=-1)
+            m = np.isfinite(d) & (d < keeper_r)
+            if m.any():
+                push = ((keeper_r - d[m]) * w[m])[:, None]
+                path[m] += (path[m] - kp[m]) / d[m, None] * push
+        vis = _visible_runs(L, visible, rng)
+        out[s:e] = np.nan
+        for a, b in vis:
+            out[s + a:s + b] = path[a:b]
+    return out
+
+
+def keeper_ball_feature(match, pitch=PITCH, r=2.0, vmax=1.5, from_goal=45.0):
+    """S21/E38 test feature: 1 on frames where a plausible goalkeeper (within ``from_goal`` m of
+    its own goal) is stationary (< ``vmax`` m/s) with the ball within ``r`` m. The degraded D ball
+    must not manufacture this geometry (E38: a keeper in possession is live play)."""
+    K = _keeper_positions(match.P, match.T, match.gk, match.half, pitch, from_goal)
+    out = np.zeros(len(match.B), bool)
+    for h in (1, 2):
+        sel = match.half == h
+        if not sel.any():
+            continue
+        Bs = match.B[sel]
+        for team in (0, 1):
+            s = int(match.gk[h - 1, team])
+            kp = K[sel, team]
+            ok = np.isfinite(kp[:, 0]) & (np.abs(match.V[sel, s]) <= vmax)
+            if not ok.any():
+                continue
+            d = np.linalg.norm(Bs[ok] - kp[ok], axis=-1)
+            o = np.zeros(len(Bs), bool)
+            o[ok] = np.isfinite(d) & (d <= r)
+            out[sel] |= o
     return out
 
 
@@ -386,10 +525,17 @@ def ball_s_channel(n, half, rng, p, level):
 
 # ---------------------------------------------------------------- API
 
-def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH):
+def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH, d_ball_visible=None):
     """ATD-like copy of ``match``. ``dead`` (bool per frame) marks frames whose ball is scrubbed
-    as a label leak (external D frames); frames with a missing native ball are always scrubbed."""
+    as a label leak (external D frames); frames with a missing native ball are always scrubbed.
+    ``d_ball_visible`` (0..1, S21) is the share of D frames with a tracked ball: at 0 the pipeline
+    is exactly S17; at >0 D frames get a restart-placed ball (see :func:`restart_ball`). Can also
+    be given in ``params``; the explicit argument wins."""
     p = dict(PARAMS, **(params or {}))
+    v = float(p["d_ball_visible"] if d_ball_visible is None else d_ball_visible)
+    if not 0.0 <= v <= 1.0:
+        raise ValueError("d_ball_visible must be in [0, 1], got {}".format(v))
+    p["d_ball_visible"] = v
     rng = np.random.default_rng(seed)
     n = len(match.B)
     dead = np.zeros(n, bool) if dead is None else np.asarray(dead, bool)
@@ -410,14 +556,18 @@ def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH):
     P, V, T = player_tracks(P, V, match.T, match.gk, match.half, rng, p, level)
     BS = ball_s_channel(n, match.half, rng, p, level)
     gk = external._goalkeepers(P, T, match.half, pitch[0])
+    if v > 0:  # S21: restart-placed D ball; runs last, so players and alive ball are unchanged
+        B = restart_ball(B, P, T, gk, match.half, dead, rng, p, v, wob, pitch)
     return data.Match(P=P, V=V, T=T, B=B.astype(np.float32), BS=BS, gk=gk,
                       graded=match.graded, half=match.half)
 
 
-def degrade_game(game, level=1.0, seed=0, params=None):
-    """Degraded copy of an external ``evaluate.Game``; its D frames are scrubbed, ref unchanged."""
+def degrade_game(game, level=1.0, seed=0, params=None, d_ball_visible=None):
+    """Degraded copy of an external ``evaluate.Game``; its D frames are scrubbed, ref unchanged.
+    ``d_ball_visible``: see :func:`degrade`."""
     s = [seed, zlib.crc32(game.name.encode())]
-    m = degrade(game.match, level, s, np.asarray(game.ref) == "D", params)
+    m = degrade(game.match, level, s, np.asarray(game.ref) == "D", params,
+                d_ball_visible=d_ball_visible)
     return evaluate.Game(game.name, m, game.ref, game.runs)
 
 
