@@ -11,6 +11,7 @@ same tracking feature code runs on BAR-ATH and external games. Use ``cache_key``
 to persist a parquet cache under ``config.cache_dir()``; a key must uniquely
 identify the input arrays and context.
 """
+import hashlib
 import os
 import re
 import warnings
@@ -20,11 +21,16 @@ import pandas as pd
 
 from . import config
 
-FEATURE_VERSION = "v1"
+FEATURE_VERSION = "v2"  # v2 (E16): jump masking, NaN attack sign off-half, bbox/GK guards, hashed cache key
 NEIGHBOURS = 3
 RADII_M = (1, 2, 4, 8)
 MAX_TIME_TO_BALL_S = 60.0
 STRAIN_DISTANCE_FLOOR_M = 0.5
+# Physical-limit hygiene (E16): velocities above these are tracking jumps, not motion, and become NaN.
+PLAYER_VMAX_MPS = 12.0
+BALL_VMAX_MPS = 50.0
+BBOX_MIN_M2 = 10.0     # a team spread over less than this has no meaningful area ratio
+GK_MAX_ATTACK_X_M = 0.0  # a goalkeeper beyond the halfway line is a tracking error
 
 # Attacker-side interval codes from the Smart Tagging audit. Mirrored DEFENDING*
 # codes are deliberately absent; load_tags() has already canonicalised team ids.
@@ -158,7 +164,7 @@ def _nearest_rank(x, fraction):
 def _attack_directions(match, pitch_length):
     """Per-frame attack sign from each half's mean goalkeeper x position."""
     n = len(match.B)
-    signs = np.zeros((n, 2), dtype=np.float32)
+    signs = np.full((n, 2), np.nan, dtype=np.float32)  # NaN off-half: no attack direction exists
     for h in (1, 2):
         rows = np.flatnonzero(match.half == h)
         if not len(rows):
@@ -192,6 +198,11 @@ def _validate_match(match, fps, pitch):
     for team in (0, 1):
         if not np.any(np.asarray(match.T) == team):
             raise ValueError("team {} has no tracking slots".format(team))
+    gk = np.asarray(match.gk)
+    for h in (0, 1):
+        for team in (0, 1):
+            if not 0 <= gk[h, team] < slots or np.asarray(match.T)[gk[h, team]] != team:
+                raise ValueError("gk slot {} of half {} is not a team-{} slot".format(gk[h, team], h + 1, team))
     return n
 
 
@@ -243,11 +254,27 @@ def tag_features(tags, n_frames):
     }
 
 
-def _cache_path(cache_key):
+def _input_digest(match, fps, pitch, camera_x, tags):
+    """Short hash of every input that changes the output, so a reused cache_key cannot go stale."""
+    h = hashlib.blake2b(digest_size=6)
+    h.update(repr((FEATURE_VERSION, float(fps), tuple(map(float, pitch)))).encode())
+    for name in ("P", "V", "T", "B", "BS", "gk", "half"):
+        a = np.ascontiguousarray(getattr(match, name))
+        h.update("{}{}{}".format(name, a.shape, a.dtype).encode())
+        h.update(a.tobytes())
+    if camera_x is not None:
+        h.update(np.ascontiguousarray(camera_x, dtype=np.float32).tobytes())
+    if tags is not None:
+        h.update(pd.util.hash_pandas_object(tags.astype(str), index=True).to_numpy().tobytes())
+        h.update(",".join(tags.columns).encode())
+    return h.hexdigest()
+
+
+def _cache_path(cache_key, digest):
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", cache_key).strip("-")
     if not safe or safe != cache_key:
         raise ValueError("cache_key may contain only letters, digits, '.', '_' and '-'")
-    return os.path.join(config.cache_dir(), "features-{}-{}.parquet".format(FEATURE_VERSION, safe))
+    return os.path.join(config.cache_dir(), "features-{}-{}-{}.parquet".format(FEATURE_VERSION, safe, digest))
 
 
 def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
@@ -275,7 +302,9 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
         Stable input/context identifier for a parquet cache in ``.cache/``.
     """
     n = _validate_match(match, fps, pitch)
-    path = _cache_path(cache_key) if cache_key is not None else None
+    path = None
+    if cache_key is not None:
+        path = _cache_path(cache_key, _input_digest(match, fps, pitch, camera_x, tags))
     if path is not None and os.path.isfile(path):
         cached = pd.read_parquet(path)
         if len(cached) != n or tuple(cached.columns) != FEATURE_COLUMNS:
@@ -289,8 +318,11 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
     team_ids = np.asarray(match.T)
     pitch_length, pitch_width = map(float, pitch)
     ball_present = _finite(b)
+    v = np.where(v > PLAYER_VMAX_MPS, np.nan, v).astype(np.float32)
     player_v = _derivative(p, fps, half)
+    player_v[np.linalg.norm(player_v, axis=-1) > PLAYER_VMAX_MPS] = np.nan
     ball_v = _derivative(b, fps, half)
+    ball_v[np.linalg.norm(ball_v, axis=-1) > BALL_VMAX_MPS] = np.nan
     attack_sign = _attack_directions(match, pitch_length)
     values = {name: np.full(n, np.nan, dtype=np.float32) for name in FEATURE_COLUMNS}
     values["ball_present"] = ball_present.astype(np.float32)
@@ -393,7 +425,9 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
             outfield = np.flatnonzero(indices != gk_slot)
             defensive[rows] = _nearest_rank(canonical_x[rows][:, outfield], 0.10)
             gk_x[rows] = canonical_x[rows, local_gk]
+            gk_x[rows[gk_x[rows] > GK_MAX_ATTACK_X_M]] = np.nan
             gk_y[rows] = positions[rows, local_gk, 1]
+            gk_y[rows[~np.isfinite(gk_x[rows])]] = np.nan
         values["{}_defensive_line_attack_x_m".format(prefix)] = defensive
         values["{}_gk_attack_x_m".format(prefix)] = gk_x
         values["{}_gk_y_m".format(prefix)] = gk_y
@@ -410,7 +444,7 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
     np.divide(
         values["home_bbox_area_m2"], values["away_bbox_area_m2"],
         out=values["bbox_area_ratio_home_away"],
-        where=values["away_bbox_area_m2"] > 0,
+        where=(values["away_bbox_area_m2"] >= BBOX_MIN_M2) & (values["home_bbox_area_m2"] >= BBOX_MIN_M2),
     )
 
     if camera_x is None:
@@ -428,3 +462,10 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
         result.to_parquet(temporary, index=False)
         os.replace(temporary, path)
     return result
+
+
+def game_features(game, **kwargs):
+    """``features()`` for an external ``evaluate.Game`` with its own pitch size (not the 105.3 x 68 default)."""
+    from . import external
+    kwargs.setdefault("pitch", external.pitch(game))
+    return features(game.match, **kwargs)

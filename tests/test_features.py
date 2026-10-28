@@ -85,10 +85,48 @@ class Features(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict(os.environ, {"MTAH_CACHE_DIR": directory}):
                 first = feature_lib.features(match, cache_key="synthetic")
-                path = feature_lib._cache_path("synthetic")
+                path = feature_lib._cache_path(
+                    "synthetic", feature_lib._input_digest(match, 25.0, (105.3, 68.0), None, None))
                 self.assertTrue(os.path.isfile(path))
                 second = feature_lib.features(match, cache_key="synthetic")
                 pd.testing.assert_frame_equal(first, second)
+
+    def test_cache_key_covers_fps_pitch_and_input(self):
+        match = synthetic_match()
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.dict(os.environ, {"MTAH_CACHE_DIR": directory}):
+                feature_lib.features(match, cache_key="k")
+                feature_lib.features(match, cache_key="k", fps=10.0)
+                feature_lib.features(match, cache_key="k", pitch=(105.0, 68.0))
+                moved = SimpleNamespace(**match.__dict__)
+                moved.P = match.P + 1.0
+                feature_lib.features(moved, cache_key="k")
+                self.assertEqual(len(os.listdir(directory)), 4)
+
+    def test_attack_features_are_nan_off_half(self):
+        match = synthetic_match()
+        match.half = match.half.copy()
+        match.half[:10] = 0
+        result = feature_lib.features(match)
+        self.assertTrue(result.loc[:9, ["home_centroid_attack_x_m", "away_centroid_attack_x_m"]].isna().all().all())
+        self.assertTrue(result.loc[10:, "home_centroid_attack_x_m"].notna().all())
+
+    def test_tracking_jumps_are_masked_not_propagated(self):
+        match = synthetic_match()
+        match.B = match.B.copy()
+        match.B[30] = [90.0, 5.0]  # one-frame teleport: implied speed >> 50 m/s
+        match.P = match.P.copy()
+        match.P[40, 0] += [30.0, 0.0]  # one-frame player jump: > 12 m/s
+        result = feature_lib.features(match)
+        self.assertTrue(np.nanmax(result["ball_speed_mps"]) <= feature_lib.BALL_VMAX_MPS)
+        self.assertTrue(np.nanmax(result["home_ball_near1_rel_speed_mps"]) <= feature_lib.BALL_VMAX_MPS
+                        + feature_lib.PLAYER_VMAX_MPS)
+
+    def test_gk_slot_must_belong_to_team(self):
+        match = synthetic_match()
+        match.gk = np.array([[3, 3], [1, 3]])
+        with self.assertRaises(ValueError):
+            feature_lib.features(match)
 
     def test_camera_unprojects_image_centre(self):
         matrix = np.diag([1920.0, 1080.0, 1.0])

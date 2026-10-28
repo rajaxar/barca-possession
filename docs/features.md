@@ -40,8 +40,12 @@ impute tracking. `tags=None` means *source unavailable*; an empty tag DataFrame 
 coverage*.
 
 With `cache_key`, the DataFrame is written atomically to
-`.cache/features-v1-<cache_key>.parquet` (or `MTAH_CACHE_DIR`) and read back on the next call. Cache
-keys are deliberately explicit: callers must make them unique to the input arrays and context.
+`.cache/features-v2-<cache_key>-<digest>.parquet` (or `MTAH_CACHE_DIR`) and read back on the next
+call. `<digest>` hashes the feature version, `fps`, `pitch`, every input array, `camera_x` and
+`tags`, so a reused key with different parameters or data can never return stale features.
+
+For an external game use `features.game_features(game)`: it passes that game's own pitch size
+(`external.pitch(game)`, IDSSE/Metrica are 105 x 68) rather than the 105.3 x 68 default.
 Parquet round-trip preserves rows, columns and values exactly.
 
 ## Common definitions
@@ -51,6 +55,16 @@ Parquet round-trip preserves rows, columns and values exactly.
   own goal and positive toward the opponent's. `attack_sign` is +1 when the team's mean goalkeeper x
   in that half is on the low-x side, otherwise -1. It resets between halves. Canonical columns are
   NaN outside halves 1/2.
+- **Hygiene (v2, E16):** velocities beyond physical limits are tracking jumps and become NaN before
+  any derived column: player xy-velocity > 12 m/s (`PLAYER_VMAX_MPS`), ball xy-velocity > 50 m/s
+  (`BALL_VMAX_MPS`), vendor `V` > 12 m/s. `bbox_area_ratio_home_away` is NaN unless both areas are
+  >= 10 m² (`BBOX_MIN_M2`); goalkeeper x/y are NaN when the keeper is beyond the halfway line
+  (canonical x > 0, `GK_MAX_ATTACK_X_M`). `attack_sign` is NaN (not 0) outside halves 1/2, so every
+  attack-canonical column, including the centroid, is NaN there. `match.gk` slots must belong to
+  their team (ValueError otherwise). A goalkeeper substituted mid-half keeps the starter's slot for
+  that half (the replacement is an outfield player). For fully cleaned inputs see
+  `possession/clean.py` (duplicates, peripheral surplus, ball spikes), which is not wired into the
+  feature call.
 - **Velocity:** central xy finite differences, with a one-sided estimate when only one adjacent
   observation exists. Differences require finite endpoints in the same half; there is no gap
   interpolation. Relative speed is `||v_player - v_ball||`.
@@ -134,7 +148,7 @@ All columns are `float32`. `home`/`away` are common-format team ids 0/1, not inf
 | 55 | `away_mean_speed_mps` | m/s | Mean of finite away `V` speed values. |
 | 56 | `away_mean_speed_delta_mps2` | m/s² | Per-second derivative of away mean team speed. |
 | 57 | `away_pressing_mps` | m/s | Away mean velocity component toward home centroid. |
-| 58 | `bbox_area_ratio_home_away` | ratio | Home bounding-box area divided by away area; NaN for zero denominator. |
+| 58 | `bbox_area_ratio_home_away` | ratio | Home bounding-box area divided by away area; NaN unless both areas >= 10 m². |
 | 59 | `camera_look_at_x_m` | m | Image centre (960,540) unprojected through homography, x in metres. |
 | 60 | `ball_out_of_pitch` | 0/1 | Ball is finite and outside `[0,L] x [0,W]`; NaN if ball absent. |
 | 61 | `ball_s_present` | 0/1 | Raw common-format `BS` channel is finite; makes no semantic assumption. |

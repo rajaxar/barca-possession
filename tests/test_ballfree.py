@@ -13,10 +13,13 @@ def long_match(n=2000):
     rng = np.random.RandomState(0)
     half = np.repeat([1, 2], n // 2).astype(np.int8)
     p = np.zeros((n, 6, 2), dtype=np.float32)
-    p[:, :, 0] = rng.uniform(20, 80, (n, 6))
-    p[:, :, 1] = rng.uniform(20, 48, (n, 6))
+    # Physical motion (E16 masks implied speeds above 12 m/s): fixed slot spots plus small jitter.
+    p[:, :, 0] = rng.uniform(20, 80, (1, 6)) + rng.normal(0, 0.02, (n, 6))
+    p[:, :, 1] = np.array([[20, 34, 48, 22, 34, 46]]) + rng.normal(0, 0.02, (n, 6))
     wide = (np.arange(n) % 500) < 250
-    p[wide, :3, 1] = rng.uniform(2, 66, (wide.sum(), 3))
+    # Ramp between the two shapes over 150 frames (<= 11 m/s) instead of jumping.
+    ramp = np.convolve(wide.astype(float), np.ones(150) / 150, mode="same")[:, None]
+    p[:, :3, 1] = (1 - ramp) * p[:, :3, 1] + ramp * np.array([[2, 34, 66]])
     p[:, 0, 0] = 3
     p[:, 3, 0] = 100
     return type(synthetic_match())(

@@ -356,6 +356,18 @@ def load_game(game_id):
     raise ValueError("unknown external game ID {!r}".format(game_id))
 
 
+def pitch(game):
+    """(length, width) in metres of a game ID or ``evaluate.Game``, for ``features(..., pitch=...)``."""
+    game_id = game if isinstance(game, str) else game.name
+    dataset, _, source_id = game_id.partition(":")
+    if dataset == "idsse":
+        _, _, _, length, width = _idsse_meta(source_id)
+        return float(length), float(width)
+    if dataset == "metrica":
+        return 105.0, 68.0
+    raise ValueError("unknown external game ID {!r}".format(game_id))
+
+
 def load_games(game_ids=None):
     """Generator over games; by default discovers every available IDSSE and Metrica game."""
     for game_id in list_games() if game_ids is None else game_ids:
