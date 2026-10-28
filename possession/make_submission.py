@@ -14,6 +14,15 @@ def build_labels():
     return predict(load_match())
 
 
+def audio_status_line():
+    """`audio: ok|reason` for the run log. Never raises: audio is optional evidence (S26)."""
+    try:
+        from possession import audio
+        return audio.status_line()
+    except Exception:  # noqa: BLE001 - the submission build must not depend on audio at all
+        return "audio: audio_error"
+
+
 def write_csv(labels, path):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", newline="\n") as f:
@@ -27,6 +36,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     write_csv(build_labels(), args.out)
     print("wrote", args.out)
+    print(audio_status_line())
 
 
 if __name__ == "__main__":

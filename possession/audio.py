@@ -17,18 +17,27 @@ Outputs:
                                    log-odds increment and its posterior, gated by tracking
                                    stillness. Never a hard D rule (p <= 0.80).
 
-Everything degrades gracefully: no video / no ffmpeg / no audio track -> empty event list with a
-`reason`, never an exception. The audio is streamed from an ffmpeg subprocess and reduced frame by
-frame, so peak memory is one ~40 MB chunk, not the 500 MB decoded track.
+Everything degrades gracefully: no video / no ffmpeg / no audio stream / a truncated, failed or
+timed-out decode -> empty event list with a `reason` (`no_video`, `no_ffmpeg`, `no_audio`,
+`popen_failed`, `ffmpeg_failed`, `partial_decode`, `timeout`), never an exception and never a
+plausible-looking partial list. The audio is streamed from an ffmpeg subprocess whose stderr is
+drained on a thread and which is killed after a wall-clock timeout; features are reduced frame by
+frame, so peak memory is ~300 MB (one 2048x1025 complex STFT plus its index array), not the
+500 MB decoded track.
 
 Offline and deterministic, numpy only (no librosa, no ffmpeg-python) plus the ffmpeg *binary*
 for decoding; every threshold is a fixed constant, so the same audio always gives the same list.
+The STFT grid is anchored to absolute audio time (`start` multiples of `hop`), so a sliced call
+returns the same frames as the full run over the same interval (S26/F6).
 """
+import errno
 import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
+import threading
 from collections import namedtuple
 
 import numpy as np
@@ -50,7 +59,7 @@ C1_MIN_DB = 20.0           # strongest ridge vs local floor
 C2_MIN_DB = 12.0           # second ridge vs local floor
 MIN_SEP_HZ = 235.0         # rejects a single ridge's skirts / low-f0 harmonic stacks
 MIN_FRAMES = 6             # 6 * 32 ms = 0.19 s of tone; R06: whistles last 0.4-1.2 s
-MAX_GAP = 3                # bridge up to 3 silent STFT frames inside one whistle
+MAX_GAP = 3                # _runs bridges max_gap-1 = 2 silent STFT frames = 64 ms inside a whistle
 EPS = 1e-10
 
 Config = namedtuple("Config", "sr n_fft hop tone_band peak_band crowd_band ref_hz c1_db c2_db "
@@ -61,6 +70,18 @@ CFG = Config(SR, N_FFT, HOP, TONE_BAND_HZ, PEAK_BAND_HZ, CROWD_BAND_HZ, CONTRAST
 # Bumped whenever the numbers above (or the STFT) change: it is part of every cache key, so a
 # stale cached feature block can never leak into a run with new thresholds.
 DETECTOR_VERSION = "e15-1"
+# Bumped whenever anything else about this file changes: the feature computation, `detect`, the
+# frame mapping or the cache layout. Thresholds are DETECTOR_VERSION's business; both are part of
+# every cache key, so a code change cannot reuse arrays computed by older code (S26/F5).
+MODULE_VERSION = "s26-1"
+
+# Decode guards (S26/F1-F2). The full match decodes in ~35-40 s here, so 300 s is ~8x that before
+# we give up; MTAH_AUDIO_TIMEOUT_S overrides it (tests use a 1 s timeout on a hung shim).
+AUDIO_TIMEOUT_S = 300.0
+# |expected - decoded| samples tolerated before a decode is called partial. The AAC edit list and
+# the container-duration rounding cost ~0.09 s on the full match; 1 s is 10x that and still flags
+# any truncation that could hide or move a whistle.
+SAMPLE_TOL_S = 1.0
 
 # Feature arrays at the STFT rate (t: seconds, centre of the window).
 Feat = namedtuple("Feat", "t c1 f1 c2 f2 crowd_db")
@@ -93,6 +114,40 @@ STILL_SPEED_MS = 1.5       # walk/jog boundary; the same cut E25 and R06 used (p
 
 
 # ------------------------------------------------------------------ ffmpeg / audio input
+class AudioUnavailable(RuntimeError):
+    """A decode that could not be completed; `reason` is a stable token for `Track.reason`."""
+
+    def __init__(self, reason, detail=""):
+        self.reason = reason
+        super().__init__(reason + (": " + detail if detail else ""))
+
+
+def _timeout_s():
+    """Wall-clock limit for one decode, MTAH_AUDIO_TIMEOUT_S overridable."""
+    try:
+        return float(os.environ.get("MTAH_AUDIO_TIMEOUT_S", AUDIO_TIMEOUT_S))
+    except (TypeError, ValueError):
+        return AUDIO_TIMEOUT_S
+
+
+def _drain(pipe, sink, limit=1 << 16):
+    """Read a pipe to EOF on a worker thread, keeping at most `limit` bytes for diagnostics."""
+    try:
+        while True:
+            block = pipe.read(1 << 16)
+            if not block:
+                break
+            if len(sink) < limit:
+                sink.extend(block[:limit - len(sink)])
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            pipe.close()
+        except OSError:
+            pass
+
+
 def ffmpeg_bin():
     """The ffmpeg CLI, or None. MTAH_FFMPEG overrides the lookup (tests use it to force absence)."""
     env = os.environ.get("MTAH_FFMPEG")
@@ -130,16 +185,20 @@ def probe(video):
     return info, ("ok" if info["audio"] else "no_audio")
 
 
-def pcm_chunks(video, start=0.0, duration=None, chunk=1 << 20, sr=SR):
+def pcm_chunks(video, start=0.0, duration=None, chunk=1 << 20, sr=SR,
+               expect_samples=None, timeout=None):
     """Yield float32 mono PCM blocks from the video's first audio stream (ffmpeg CLI, streamed).
 
-    `start`/`duration` are seconds of *audio* time. Raises RuntimeError only if ffmpeg fails before
-    producing any audio (the caller turns that into a graceful skip). A failure *after* some audio
-    was decoded yields what was decoded, so the event list covers only that part of the track.
+    `start`/`duration` are seconds of *audio* time. Raises `AudioUnavailable` (never a bare
+    exception) if ffmpeg cannot be spawned, if the decode exceeds `timeout` wall-clock seconds
+    (the child is killed), if the child exits non-zero, or if fewer samples than
+    `expect_samples` (from the container duration) arrived. A truncated decode must never look
+    like a complete one: the caller turns every failure into `ok=False` and caches nothing.
     """
     ff = ffmpeg_bin()
     if not ff:
-        raise RuntimeError("no_ffmpeg")
+        raise AudioUnavailable("no_ffmpeg")
+    timeout = _timeout_s() if timeout is None else float(timeout)
     cmd = [ff, "-nostdin", "-loglevel", "error"]
     if start and start > 0:
         cmd += ["-ss", "%.3f" % start]
@@ -147,22 +206,73 @@ def pcm_chunks(video, start=0.0, duration=None, chunk=1 << 20, sr=SR):
         cmd += ["-t", "%.3f" % duration]
     cmd += ["-i", video, "-vn", "-map", "0:a:0", "-ac", "1", "-ar", str(sr),
             "-f", "f32le", "-acodec", "pcm_f32le", "-"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    got = False
+    try:
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True)
+    except OSError as exc:  # e.g. Exec format error, vanished or unreadable binary
+        raise AudioUnavailable("no_ffmpeg" if exc.errno == errno.ENOENT else "popen_failed",
+                               str(exc))
+    # Drain stderr on its own thread: with >64 KB of ffmpeg errors an undrained pipe blocks the
+    # child, which stops producing stdout and deadlocks the reader (S26/F2).
+    err = bytearray()
+    drain = threading.Thread(target=_drain, args=(proc.stderr, err), daemon=True)
+    drain.start()
+    killed = threading.Event()
+
+    def _kill():  # watchdog: a hung decode is worse than a failed one
+        killed.set()
+        try:  # the child leads its own process group (start_new_session), so kill its helpers too
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (OSError, AttributeError):
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+    timer = None
+    if timeout and timeout > 0:
+        timer = threading.Timer(timeout, _kill)
+        timer.daemon = True
+        timer.start()
+    got = 0
+    tail = b""
     try:
         while True:
             raw = proc.stdout.read(chunk * 4)
             if not raw:
                 break
-            got = True
-            yield np.frombuffer(raw, dtype="<f4").copy()
+            raw = tail + raw
+            n = len(raw) // 4          # a short final read must not break the sample stride
+            tail = raw[n * 4:]
+            if not n:
+                continue
+            got += n
+            yield np.frombuffer(raw[:n * 4], dtype="<f4").copy()
+        proc.wait()
     finally:
-        proc.stdout.close()
-        err = proc.stderr.read() if proc.stderr else b""
-        proc.stderr.close()
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+        if timer is not None:
+            timer.cancel()
+        if proc.poll() is None:  # consumer stopped early: never leave a decode running
+            _kill()
         code = proc.wait()
-    if code != 0 and not got:
-        raise RuntimeError("ffmpeg_failed: " + (err.decode("utf-8", "replace").strip()[:200] or code))
+        drain.join(timeout=5.0)
+    if killed.is_set():
+        raise AudioUnavailable("timeout", "no audio in %.0f s" % timeout)
+    if code != 0 and got == 0:
+        raise AudioUnavailable("ffmpeg_failed",
+                               err.decode("utf-8", "replace").strip()[:200] or str(code))
+    if expect_samples is not None:
+        short = int(expect_samples) - got
+        if short > int(round(SAMPLE_TOL_S * sr)):
+            raise AudioUnavailable("partial_decode", "%d of %d samples (%.2f s missing)"
+                                   % (got, int(expect_samples), short / float(sr)))
+    if code != 0:
+        raise AudioUnavailable("ffmpeg_failed",
+                               err.decode("utf-8", "replace").strip()[:200] or str(code))
 
 
 # ------------------------------------------------------------------ chunked STFT -> features
@@ -211,8 +321,13 @@ def frame_features(x, cfg=CFG):
                 f2=fp[k2].astype(np.float32), crowd_db=crowd_db.astype(np.float32))
 
 
-def features_from_chunks(chunks, cfg=CFG):
-    """Per-frame Feat for an iterable of float32 PCM blocks (the STFT is chunked, features are not)."""
+def features_from_chunks(chunks, cfg=CFG, first_sample=0):
+    """Per-frame Feat for an iterable of float32 PCM blocks (the STFT is chunked, features are not).
+
+    `first_sample` is the absolute index (in the source stream, from sample 0) of the first sample
+    in `chunks`, so `feat.t` is always *absolute* audio time in seconds. A slice decoded from
+    `start` therefore lands on the same windows as the full run (S26/F6).
+    """
     parts = []
     buf = np.zeros(0, np.float32)
     for chunk in chunks:
@@ -232,30 +347,83 @@ def features_from_chunks(chunks, cfg=CFG):
         return Feat(t=z, c1=z, f1=z, c2=z, f2=z, crowd_db=z)
     cat = {f: np.concatenate([p[i] for p in parts]) for i, f in enumerate(Feat._fields) if f != "t"}
     n = len(cat["c1"])
-    t = (np.arange(n, dtype=np.float64) * cfg.hop + cfg.n_fft / 2.0) / cfg.sr
+    t = (int(first_sample) + np.arange(n, dtype=np.float64) * cfg.hop
+         + cfg.n_fft / 2.0) / cfg.sr
     return Feat(t=t, **cat)
 
 
-def analyse(video, start=0.0, duration=None, cfg=CFG, cache=True):
-    """Stream the audio from the video and return Feat at the STFT rate (t = window centre, s).
+def _audio_duration(info):
+    """Stream duration if ffprobe reported one, else the container duration, else None."""
+    if not info:
+        return None
+    audio = info.get("audio") or {}
+    for value in (audio.get("duration"), info.get("duration")):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return None
 
-    The per-frame features are cached under config.cache_dir() (keyed by the video's size+mtime,
-    the detector version and the slice), so the one-off decode of the full match happens once.
+
+def _grid(start, sr, hop):
+    """(first_sample, skip): drop `skip` decoded samples so windows sit on absolute hop multiples.
+
+    ffmpeg's `-ss` returns audio that starts at ~round(start*sr); skipping the remainder of the hop
+    puts every STFT window at the same absolute sample as in the full run (S26/F6).
+    """
+    off = int(round(max(0.0, float(start or 0.0)) * sr))
+    skip = (-off) % hop
+    return off + skip, skip
+
+
+def _drop(chunks, k):
+    """Drop the first `k` samples from a chunk stream."""
+    for chunk in chunks:
+        if k > 0:
+            if chunk.size <= k:
+                k -= chunk.size
+                continue
+            chunk = chunk[k:]
+            k = 0
+        yield chunk
+
+
+def analyse(video, start=0.0, duration=None, cfg=CFG, cache=True, info=None, timeout=None):
+    """Stream the audio from the video and return Feat at the STFT rate (t = absolute seconds).
+
+    The per-frame features are cached under config.cache_dir(), keyed by a content fingerprint of
+    the video, the module/detector versions, `cfg` and the slice. A partial or failed decode raises
+    `AudioUnavailable` *before* anything is cached, so a truncated run cannot poison the cache.
     """
     video = str(video)
+    sr, hop = cfg.sr, cfg.hop
+    if info is None:
+        info, _ = probe(video)
+    dur = _audio_duration(info)
+    first, skip = _grid(start, sr, hop)
+    expect = None
+    if dur is not None:
+        span = dur - max(0.0, float(start or 0.0))
+        if duration:
+            span = min(span, float(duration))
+        expect = int(round(max(0.0, span) * sr))
     extra = dict(start=round(float(start), 3),
                  duration=None if duration is None else round(float(duration), 3),
-                 cfg=[list(x) if isinstance(x, tuple) else x for x in cfg])
-    path = _cache_path(video, "feat", extra)
-    if cache and os.path.isfile(path):
+                 first_sample=first, skip=skip)
+    path = _cache_path(video, "feat", extra, cfg) if cache else None
+    if path and os.path.isfile(path):
         try:
             with np.load(path) as z:
                 return Feat(t=z["t"], c1=z["c1"], f1=z["f1"], c2=z["c2"], f2=z["f2"],
                             crowd_db=z["crowd_db"])
         except (OSError, ValueError, KeyError):
             pass
-    feat = features_from_chunks(pcm_chunks(video, start=start, duration=duration, sr=cfg.sr), cfg)
-    if cache and len(feat.t):
+    chunks = _drop(pcm_chunks(video, start=start, duration=duration, sr=sr,
+                              expect_samples=expect, timeout=timeout), skip)
+    feat = features_from_chunks(chunks, cfg, first_sample=first)
+    if path and len(feat.t):
         try:
             _save(path, t=feat.t, c1=feat.c1, f1=feat.f1, c2=feat.c2, f2=feat.f2,
                   crowd_db=feat.crowd_db)
@@ -266,7 +434,10 @@ def analyse(video, start=0.0, duration=None, cfg=CFG, cache=True):
 
 # ------------------------------------------------------------------ events
 def _runs(mask, max_gap):
-    """(first, last) index pairs of True runs, bridging False gaps <= max_gap."""
+    """(first, last) index pairs of True runs, bridging False gaps of at most `max_gap - 1` frames.
+
+    So max_gap=3 bridges 1- and 2-frame gaps (32-64 ms at 25 fps) but splits at 3.
+    """
     out = []
     i, n = 0, len(mask)
     while i < n:
@@ -287,8 +458,9 @@ def _runs(mask, max_gap):
 def detect(feat, cfg=CFG, t0=0.0):
     """Whistle events from Feat. Returns a structured array sorted by start frame.
 
-    `t0` is the absolute audio time of `feat.t[0]` (non-zero when the audio was read from a slice),
-    so the emitted frames are always indices into the full video.
+    `feat.t` is absolute audio time (see `features_from_chunks`), so `t0` only exists for callers
+    that built a Feat on a relative clock; the emitted frames are always submission rows:
+    frame f is at t = f / 25 s (the ATD frame_id is f + 1), 0-based, never negative.
     """
     empty = np.zeros(0, dtype=EVENT_DTYPE)
     n = len(feat.c1)
@@ -311,8 +483,8 @@ def detect(feat, cfg=CFG, t0=0.0):
         t0a = float(feat.t[a] + t0 - half_win)
         t1a = float(feat.t[b] + t0 + half_win)
         k = a + int(np.argmax(feat.c1[sl]))
-        rows.append((int(round(t0a * FPS)) + 1, int(round(t1a * FPS)) + 1,
-                     int(round(float(feat.t[k] + t0) * FPS)) + 1, t1a - t0a, f1, f2, sep,
+        rows.append((max(0, int(round(t0a * FPS))), max(0, int(round(t1a * FPS))),
+                     max(0, int(round(float(feat.t[k] + t0) * FPS))), t1a - t0a, f1, f2, sep,
                      float(feat.c1[a:b + 1].max()), float(feat.c2[a:b + 1].max()),
                      float(np.std(lo_hz)), float(np.std((hi_hz - lo_hz))),
                      b - a + 1))
@@ -323,16 +495,47 @@ def detect(feat, cfg=CFG, t0=0.0):
 
 
 # ------------------------------------------------------------------ cache helpers
-def _video_key(video, extra):
-    st = os.stat(video)
+def _content_fingerprint(video, mb=1 << 20):
+    """size + mtime_ns + ctime_ns + a hash of the first/last MB of the file (S26/F5).
+
+    mtime alone is not identity: an in-place remux/remux-patch can keep size *and* mtime. ctime
+    changes on any write, and the head/tail hash catches a swapped file whose timestamps were
+    copied. (An edit confined to the middle with both timestamps forged is the residual gap; it
+    needs write access plus deliberate timestamp forgery.)
+    """
+    try:
+        st = os.stat(video)
+    except OSError:
+        return "missing"
+    h = hashlib.blake2b(digest_size=8)
+    try:
+        with open(video, "rb") as f:
+            h.update(f.read(mb))
+            if st.st_size > mb:
+                f.seek(st.st_size - mb)
+                h.update(f.read(mb))
+    except OSError:
+        pass
+    return "%d:%d:%d:%s" % (st.st_size, st.st_mtime_ns, st.st_ctime_ns, h.hexdigest())
+
+
+def _cfg_key(cfg):
+    return [list(x) if isinstance(x, tuple) else x for x in cfg]
+
+
+def _video_key(video, kind, extra, cfg=CFG):
+    """Cache identity: module/detector versions, kind, content fingerprint, cfg and the slice."""
     h = hashlib.blake2b(digest_size=12)
-    h.update(("%d:%d:%s" % (st.st_size, st.st_mtime_ns, DETECTOR_VERSION)).encode())
+    h.update(("%s:%s:%s" % (MODULE_VERSION, DETECTOR_VERSION, kind)).encode())
+    h.update(_content_fingerprint(video).encode())
+    h.update(json.dumps(_cfg_key(cfg), sort_keys=True, default=str).encode())
     h.update(json.dumps(extra, sort_keys=True, default=str).encode())
     return h.hexdigest()
 
 
-def _cache_path(video, kind, extra):
-    return os.path.join(config.cache_dir(), "audio_%s_%s.npz" % (kind, _video_key(video, extra)))
+def _cache_path(video, kind, extra, cfg=CFG):
+    return os.path.join(config.cache_dir(), "audio_%s_%s.npz" % (kind, _video_key(video, kind,
+                                                                                  extra, cfg)))
 
 
 def _save(path, **arrays):
@@ -342,11 +545,12 @@ def _save(path, **arrays):
 
 
 # ------------------------------------------------------------------ public entry points
-def whistle_events(video=None, start=0.0, duration=None, cfg=CFG, cache=True):
+def whistle_events(video=None, start=0.0, duration=None, cfg=CFG, cache=True, timeout=None):
     """Whistle events for the tactical audio, at 25 fps. Missing video / ffmpeg / audio -> ok=False.
 
     Video frames follow the organisers' convention: time of frame f (0-based) is f / 25 s
-    (R06; the ATD frame_id is video_frame + 1).
+    (R06; the ATD frame_id is video_frame + 1). Never raises: a failed, truncated or timed-out
+    decode returns `ok=False` with a token reason and no events, and nothing is cached.
     """
     video = config.asset_path("video") if video is None else video
     if video is None or str(video).endswith(os.sep):
@@ -356,26 +560,27 @@ def whistle_events(video=None, start=0.0, duration=None, cfg=CFG, cache=True):
         return Track(np.zeros(0, dtype=EVENT_DTYPE), False, "no_ffmpeg", video)
     if not os.path.isfile(video):
         return Track(np.zeros(0, dtype=EVENT_DTYPE), False, "no_video", video)
-    _, reason = probe(video)
+    info, reason = probe(video)
     if reason == "no_audio":  # container has no audio stream at all: skip without decoding
         return Track(np.zeros(0, dtype=EVENT_DTYPE), False, "no_audio", video)
     extra = dict(start=round(float(start), 3),
                  duration=None if duration is None else round(float(duration), 3))
-    path = _cache_path(video, "ev", extra)
-    if cache and os.path.isfile(path):
+    path = _cache_path(video, "ev", extra, cfg) if cache else None
+    if path and os.path.isfile(path):
         try:
             with np.load(path) as z:
                 return Track(z["events"], True, "ok", video)
         except (OSError, ValueError, KeyError):
             pass
     try:
-        feat = analyse(video, start=start, duration=duration, cfg=cfg, cache=cache)
-    except RuntimeError as exc:
-        why = str(exc)
-        return Track(np.zeros(0, dtype=EVENT_DTYPE), False,
-                     "no_audio" if "ffmpeg_failed" in why else why, video)
-    ev = detect(feat, cfg, t0=float(start or 0.0))
-    if cache:
+        feat = analyse(video, start=start, duration=duration, cfg=cfg, cache=cache, info=info,
+                       timeout=timeout)
+        ev = detect(feat, cfg)
+    except AudioUnavailable as exc:
+        return Track(np.zeros(0, dtype=EVENT_DTYPE), False, exc.reason, video)
+    except Exception:  # the contract is "never an exception"; unanticipated => no audio evidence
+        return Track(np.zeros(0, dtype=EVENT_DTYPE), False, "audio_error", video)
+    if path:
         try:
             _save(path, events=ev)
         except OSError:
@@ -383,8 +588,31 @@ def whistle_events(video=None, start=0.0, duration=None, cfg=CFG, cache=True):
     return Track(ev, True, "ok", video)
 
 
+def availability(video=None):
+    """Why audio is (or is not) usable, without decoding: ok | no_video | no_ffmpeg | no_audio."""
+    try:
+        video = config.asset_path("video") if video is None else video
+        if not video or not os.path.isfile(str(video)):
+            return "no_video"
+        if not ffmpeg_bin():
+            return "no_ffmpeg"
+        _, reason = probe(str(video))
+        return reason
+    except Exception:
+        return "audio_error"
+
+
+def status_line(video=None, track=None):
+    """One-line run-log record, e.g. `audio: ok` / `audio: no_ffmpeg` (S26)."""
+    reason = track.reason if track is not None else availability(video)
+    return "audio: " + (reason or "ok")
+
+
 def crowd_from_feat(feat, n_frames=None, t0=0.0):
-    """(N,) crowd loudness at 25 Hz, robust-z normalised within each half (R06-c)."""
+    """(N,) crowd loudness at 25 Hz, robust-z normalised within each half (R06-c).
+
+    `t0` shifts a Feat built on a relative clock; `analyse` returns absolute times, so it is 0.
+    """
     n_frames = config.N_VIDEO_FRAMES if n_frames is None else int(n_frames)
     out = np.full(n_frames, np.nan, np.float32)
     if len(feat.t):
@@ -418,8 +646,9 @@ def crowd_envelope(video=None, start=0.0, duration=None, cfg=CFG, n_frames=None,
     if not video or not os.path.isfile(str(video)) or not ffmpeg_bin():
         return np.full(n_frames, np.nan, np.float32)
     video = str(video)
-    path = _cache_path(video, "crowd", dict(start=round(float(start), 3), n=n_frames,
-                                            duration=None if duration is None else round(float(duration), 3)))
+    extra = dict(start=round(float(start), 3), n=n_frames,
+                 duration=None if duration is None else round(float(duration), 3))
+    path = _cache_path(video, "crowd", extra, cfg)
     if cache and os.path.isfile(path):
         try:
             with np.load(path) as z:
@@ -430,7 +659,7 @@ def crowd_envelope(video=None, start=0.0, duration=None, cfg=CFG, n_frames=None,
         feat = analyse(video, start=start, duration=duration, cfg=cfg, cache=cache)
     except RuntimeError:
         return np.full(n_frames, np.nan, np.float32)
-    out = crowd_from_feat(feat, n_frames, t0=float(start or 0.0))
+    out = crowd_from_feat(feat, n_frames, t0=0.0)  # feat.t is already absolute time
     if cache:
         try:
             _save(path, env=out.astype(np.float32))
@@ -471,9 +700,12 @@ def d_evidence(match, events=None, video=None, gain=LOG_ODDS_GAIN):
                during end-to-end play gets gate ~0.
       log_odds[f] = gain * w[f]      additive evidence for E07's D score (never a rule)
       p[f]        = sigmoid(log_odds[f])   the posterior with the whistle as the only evidence
-    Everything is 0 away from a whistle; p <= sigmoid(gain) = 0.80, so audio alone can never
-    declare D. E07 should add `log_odds` to its own D log-odds and keep its duration model.
+    Everything is 0 away from a whistle. `gain` is clamped to [0, LOG_ODDS_GAIN], so
+    log_odds <= 1.40 and p <= 0.80 for *any* argument: audio alone can never declare D, and
+    `p` is not a calibrated posterior (it is 0, not 0.5, off-event). E07 should add `log_odds`
+    to its own D log-odds and keep its duration model; the effective gain is returned.
     """
+    gain = float(min(max(float(gain), 0.0), LOG_ODDS_GAIN))
     n = len(match.B)
     weight = np.zeros(n, np.float32)
     gate = np.zeros(0, np.float32)
@@ -503,7 +735,7 @@ def d_evidence(match, events=None, video=None, gain=LOG_ODDS_GAIN):
         shape = np.where(dt <= BOOST_S, 1.0,
                          np.exp(-np.maximum(dt - BOOST_S, 0.0) / BOOST_DECAY_S)).astype(np.float32)
         np.maximum(weight[a:b], gate[i] * shape, out=weight[a:b])
-    log_odds = (gain * weight).astype(np.float32)
+    log_odds = np.clip(gain * weight, 0.0, LOG_ODDS_GAIN).astype(np.float32)
     p = (1.0 / (1.0 + np.exp(-log_odds.astype(np.float64)))).astype(np.float32)
     p[weight <= 0] = 0.0
     return Evidence(p, log_odds, gate, onset, events, gain)

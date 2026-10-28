@@ -5,10 +5,14 @@ No match data is needed for the core tests; the two integration tests skip when 
 ffmpeg is absent, so `make test` works on a bare checkout.
 """
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
+import wave
 
 import numpy as np
 
@@ -36,6 +40,16 @@ def _two_tones(dur=4.0, onset=1.5, length=0.6, f=(3900.0, 4300.0), level=0.25, s
 
 def detect_array(x, cfg=audio.CFG):
     return audio.detect(audio.features_from_chunks([x], cfg), cfg)
+
+
+def write_wav(path, x, sr=SR):
+    """16-bit mono WAV of a float32 signal: a real file for ffmpeg, exact and cheap to build."""
+    pcm = (np.clip(np.asarray(x, np.float32), -1.0, 1.0) * 32767.0).astype("<i2")
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(pcm.tobytes())
 
 
 class SyntheticDetector(unittest.TestCase):
@@ -206,6 +220,296 @@ class RealAudio(unittest.TestCase):
         self.assertTrue(np.any((ends >= ko - 25) & (ends <= ko)), str(tr.events))  # absolute frames
         again = audio.whistle_events(self.video, start=430.0, duration=25.0, cache=False)
         self.assertEqual(tr.events.tobytes(), again.events.tobytes())
+
+
+class S26Fixtures(unittest.TestCase):
+    """Helpers for the S26 regression tests: quiet WAV fixtures and fake ffmpeg binaries."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="s26audio")
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self._env = {}
+        for name in ("MTAH_CACHE_DIR", "MTAH_FFMPEG", "MTAH_AUDIO_TIMEOUT_S"):
+            self._env[name] = os.environ.get(name)
+
+    def tearDown(self):
+        for name, val in self._env.items():
+            if val is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = val
+
+    def wav(self, name="clip.wav", **kw):
+        path = os.path.join(self.dir, name)
+        write_wav(path, _two_tones(**kw))
+        return path
+
+    def setenv(self, **kw):
+        for k, v in kw.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = str(v)
+
+    def shim(self, name, body, real_ffmpeg=True):
+        """A fake ffmpeg at `name`; `body` runs before exec'ing the real binary (if asked)."""
+        path = os.path.join(self.dir, name)
+        lines = ["#!/bin/sh"]
+        if body:
+            lines.append(body)
+        if real_ffmpeg:
+            lines.append('exec %s "$@"' % shlex.quote(shutil.which("ffmpeg") or "/usr/bin/false"))
+        with open(path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        os.chmod(path, 0o755)
+        return path
+
+
+needs_ffmpeg = unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
+
+
+class DecodeContract(S26Fixtures):
+    """S26/F1-F3: a decode that is partial, hung or unspawnable must fail closed, never look ok."""
+
+    @needs_ffmpeg
+    def test_partial_decode_fails_and_caches_nothing(self):
+        """F1: a decode that stops at 4 s of the 10 s the container promises is not a success.
+
+        The fixture is a synthetic 10 s WAV (a real whistle at 2 s) decoded through a shim that
+        keeps only the first 4 s of PCM and exits 0 -- the Q09 case A shape, where the *only*
+        signal is the sample count (an exit code cannot see it). Nothing may be cached.
+        """
+        path = self.wav(dur=10.0, onset=2.0)
+        keep = 4 * audio.SR * 4
+        real = shlex.quote(shutil.which("ffmpeg"))
+        ff = self.shim("ffmpeg_truncating",
+                       '%s "$@" | head -c %d; exit 0' % (real, keep), real_ffmpeg=False)
+        self.setenv(MTAH_FFMPEG=ff, MTAH_CACHE_DIR=os.path.join(self.dir, "cache"))
+        tr = audio.whistle_events(path, cache=True)
+        self.assertFalse(tr.ok)
+        self.assertEqual(tr.reason, "partial_decode", tr.reason)
+        self.assertEqual(len(tr.events), 0)
+        self.assertEqual(tr.events.dtype, audio.EVENT_DTYPE)
+        leftovers = [f for f in os.listdir(os.environ["MTAH_CACHE_DIR"]) if f.endswith(".npz")]
+        self.assertEqual(leftovers, [], "a failed decode must not write the cache")
+
+    @needs_ffmpeg
+    def test_partial_decode_with_nonzero_exit_is_still_partial(self):
+        """F1: short output plus exit 1 is reported as `partial_decode`, not as a plain failure."""
+        path = self.wav(dur=10.0, onset=2.0)
+        keep = 4 * audio.SR * 4
+        real = shlex.quote(shutil.which("ffmpeg"))
+        ff = self.shim("ffmpeg_truncating_fail",
+                       '%s "$@" | head -c %d; echo "decoder died" >&2; exit 1' % (real, keep),
+                       real_ffmpeg=False)
+        self.setenv(MTAH_FFMPEG=ff, MTAH_CACHE_DIR=os.path.join(self.dir, "cache"))
+        tr = audio.whistle_events(path, cache=True)
+        self.assertFalse(tr.ok)
+        self.assertEqual(tr.reason, "partial_decode", tr.reason)
+        self.assertEqual(len(tr.events), 0)
+
+    @needs_ffmpeg
+    def test_decode_failure_before_output_is_a_reason(self):
+        """F1/F3: a child that emits nothing and exits 1 -> ok=False, no exception."""
+        path = self.wav()
+        ff = self.shim("ffmpeg_immediate_fail", "echo 'no such stream' >&2; exit 1",
+                       real_ffmpeg=False)
+        self.setenv(MTAH_FFMPEG=ff)
+        tr = audio.whistle_events(path, cache=False)
+        self.assertFalse(tr.ok)
+        self.assertEqual(tr.reason, "ffmpeg_failed", tr.reason)
+        self.assertEqual(len(tr.events), 0)
+
+    @needs_ffmpeg
+    def test_stderr_flood_does_not_deadlock(self):
+        """F2: 200 KB of stderr before any PCM used to fill the pipe and hang forever."""
+        path = self.wav(dur=8.0, onset=3.0)
+        flood = "%s -c \"import sys; sys.stderr.write('x' * 200000); sys.stderr.flush()\"" % (
+            shlex.quote(sys.executable))
+        ff = self.shim("ffmpeg_stderrflood", flood)
+        self.setenv(MTAH_FFMPEG=ff)
+        t0 = time.time()
+        tr = audio.whistle_events(path, cache=False)
+        self.assertLess(time.time() - t0, 60.0)
+        self.assertTrue(tr.ok, tr.reason)  # the decode itself is fine, only stderr was noisy
+        self.assertEqual(len(tr.events), 1)
+
+    @needs_ffmpeg
+    def test_hung_decode_times_out(self):
+        """F2: the child is killed at the wall-clock limit and reported as `timeout`."""
+        path = self.wav()
+        ff = self.shim("ffmpeg_hang", "sleep 60", real_ffmpeg=False)
+        self.setenv(MTAH_FFMPEG=ff, MTAH_AUDIO_TIMEOUT_S="1")
+        t0 = time.time()
+        tr = audio.whistle_events(path, cache=False)
+        self.assertLess(time.time() - t0, 15.0)
+        self.assertFalse(tr.ok)
+        self.assertEqual(tr.reason, "timeout", tr.reason)
+        self.assertEqual(len(tr.events), 0)
+
+    @needs_ffmpeg
+    def test_unspawnable_binary_degrades(self):
+        """F3: an executable file that is not a binary makes Popen raise OSError; catch it."""
+        path = self.wav()
+        ff = os.path.join(self.dir, "ffmpeg_not_a_binary")
+        with open(ff, "w") as f:
+            f.write("this is not a program\n")
+        os.chmod(ff, 0o755)
+        self.setenv(MTAH_FFMPEG=ff)
+        tr = audio.whistle_events(path, cache=False)  # must not raise
+        self.assertFalse(tr.ok)
+        self.assertIn(tr.reason, ("popen_failed", "no_ffmpeg"), tr.reason)
+        self.assertEqual(len(tr.events), 0)
+
+    def test_status_line_never_raises(self):
+        """The run log line exists for every state, including "no video at all"."""
+        self.assertEqual(audio.status_line("/nonexistent/x.mp4"), "audio: no_video")
+        self.setenv(MTAH_FFMPEG="/nonexistent/ffmpeg")
+        self.assertEqual(audio.status_line("/nonexistent/x.mp4"), "audio: no_video")
+        ev = np.zeros(0, dtype=audio.EVENT_DTYPE)
+        self.assertEqual(audio.status_line(track=audio.Track(ev, False, "timeout", "v")),
+                         "audio: timeout")
+
+
+class FrameMapping(S26Fixtures):
+    """S26/F4: submission row f is at t = f/25 s; no +1, never negative."""
+
+    def _feat(self, t0=1.0, n=30):
+        t = t0 + np.arange(n) * 0.032
+        return audio.Feat(t=t, c1=np.full(n, 40.0, np.float32), f1=np.full(n, 3900.0, np.float32),
+                          c2=np.full(n, 30.0, np.float32), f2=np.full(n, 4300.0, np.float32),
+                          crowd_db=np.zeros(n, np.float32))
+
+    def test_emitted_rows_are_round_of_t_times_25(self):
+        feat = self._feat()
+        ev = audio.detect(feat)
+        self.assertEqual(len(ev), 1)
+        half = audio.N_FFT / (2.0 * audio.SR)
+        e = ev[0]
+        self.assertEqual(int(e["start_frame"]), int(round((feat.t[0] - half) * audio.FPS)))
+        self.assertEqual(int(e["end_frame"]), int(round((feat.t[-1] + half) * audio.FPS)))
+        self.assertEqual(int(e["peak_frame"]), int(round(feat.t[0] * audio.FPS)))
+        self.assertEqual(int(e["start_frame"]), 23)   # not 24: the ATD frame_id would be 24
+        self.assertLess(int(e["start_frame"]), int(e["end_frame"]))
+
+    def test_rows_are_never_negative(self):
+        ev = audio.detect(self._feat(t0=0.0))
+        self.assertEqual(len(ev), 1)
+        self.assertGreaterEqual(int(ev[0]["start_frame"]), 0)
+
+    @needs_ffmpeg
+    def test_synthetic_burst_frame_is_zero_based(self):
+        x = _two_tones(onset=1.5, length=0.6)
+        e = detect_array(x)[0]
+        half = audio.N_FFT / (2.0 * audio.SR)
+        # the envelope crosses threshold a little after the burst onset; either way the event can
+        # never be a row *after* the burst itself (the old +1 put it at least one row late)
+        self.assertLessEqual(int(e["start_frame"]), int(1.5 * audio.FPS) + 1)
+        self.assertLessEqual(abs(int(e["start_frame"]) - round((1.5 - half) * audio.FPS)), 4)
+
+
+class CacheIdentity(S26Fixtures):
+    """S26/F5: cfg, module version and content all belong to the key."""
+
+    @needs_ffmpeg
+    def test_cfg_is_part_of_the_key(self):
+        path = self.wav(dur=8.0, onset=3.0)
+        extra = dict(start=0.0, duration=None)
+        a = audio._video_key(path, "ev", extra, audio.CFG)
+        b = audio._video_key(path, "ev", extra, audio.CFG._replace(min_frames=7))
+        self.assertNotEqual(a, b)
+
+    @needs_ffmpeg
+    def test_replaced_content_with_restored_mtime_changes_the_key(self):
+        path = self.wav(dur=4.0)
+        extra = dict(start=0.0, duration=None)
+        before = audio._video_key(path, "ev", extra, audio.CFG)
+        st = os.stat(path)
+        with open(path, "r+b") as f:  # same size, different bytes, mtime restored
+            f.seek(200)
+            f.write(b"\x00\x01\x02\x03")
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+        self.assertEqual(os.stat(path).st_size, st.st_size)
+        self.assertEqual(os.stat(path).st_mtime_ns, st.st_mtime_ns)
+        self.assertNotEqual(audio._video_key(path, "ev", extra, audio.CFG), before)
+        self.assertIn(str(st.st_size), audio._content_fingerprint(path))
+
+    @needs_ffmpeg
+    def test_non_default_cfg_cannot_poison_the_event_cache(self):
+        path = self.wav(dur=8.0, onset=3.0)
+        self.setenv(MTAH_CACHE_DIR=os.path.join(self.dir, "cache"))
+        quiet = audio.whistle_events(path, cfg=audio.CFG._replace(min_frames=1000), cache=True)
+        self.assertEqual(len(quiet.events), 0)
+        default = audio.whistle_events(path, cache=True)
+        self.assertTrue(default.ok)
+        self.assertEqual(len(default.events), 1)
+
+
+class SliceInvariance(S26Fixtures):
+    """S26/F6: the analysis window start must not move an event (absolute-time STFT grid)."""
+
+    @needs_ffmpeg
+    def test_slice_equals_full_run(self):
+        path = self.wav(dur=10.0, onset=3.0, length=0.6, seed=11)
+        full = audio.whistle_events(path, cache=False)
+        self.assertTrue(full.ok, full.reason)
+        self.assertEqual(len(full.events), 1)
+        want = full.events[0]
+        for start in (0.0, 1.0, 2.0, 2.3, 2.5):
+            tr = audio.whistle_events(path, start=start, duration=5.0, cache=False)
+            self.assertTrue(tr.ok, tr.reason)
+            self.assertEqual(len(tr.events), 1, "start=%s" % start)
+            got = tr.events[0]
+            for field in ("start_frame", "end_frame", "peak_frame"):
+                self.assertEqual(int(got[field]), int(want[field]),
+                                 "%s moved with start=%s" % (field, start))
+
+
+class CacheAndDocs(S26Fixtures):
+    """S26/F7-F9: the evidence cap, the documented gap rule, the documented memory."""
+
+    def test_gain_is_clamped(self):
+        from possession.data import Match
+        n = 400
+        P = np.zeros((n, 4, 2), np.float32)
+        P[..., 0] = np.linspace(0, 100, n)[:, None]
+        V = np.full((n, 4), 0.4, np.float32)
+        B = np.full((n, 2), np.nan, np.float32)
+        m = Match(P=P, V=V, T=np.zeros(4, np.int8), B=B, BS=np.zeros(n, np.float32),
+                  gk=np.zeros((2, 2), np.int8), graded=np.ones(n, bool), half=np.zeros(n, np.int8))
+        ev = np.zeros(1, dtype=audio.EVENT_DTYPE)
+        ev[0] = (10, 12, 15, 0.6, 3900.0, 4300.0, 400.0, 30.0, 20.0, 10.0, 10.0, 18)
+        for gain in (2.0, 5.0, 100.0):
+            out = audio.d_evidence(m, ev, gain=gain)
+            self.assertLessEqual(float(out.p.max()), audio.P_CAP + 1e-6)
+            self.assertLessEqual(float(out.log_odds.max()), audio.LOG_ODDS_GAIN + 1e-6)
+            self.assertEqual(out.gain, audio.LOG_ODDS_GAIN)
+        zero = audio.d_evidence(m, ev, gain=-3.0)
+        self.assertEqual(float(zero.log_odds.max()), 0.0)
+
+    def test_max_gap_documented_semantics(self):
+        """F8: MAX_GAP=3 bridges 2 silent frames (64 ms), not 3 (96 ms)."""
+        T, F = True, False
+        self.assertEqual(audio._runs([T, F, T], 3), [(0, 2)])
+        self.assertEqual(audio._runs([T, F, F, T], 3), [(0, 3)])
+        self.assertEqual(audio._runs([T, F, F, F, T], 3), [(0, 0), (4, 4)])
+
+    def test_memory_claim_is_corrected(self):
+        """F9: the docstring must not repeat the old ~40 MB peak-memory claim."""
+        doc = audio.__doc__ or ""
+        self.assertIn("300 MB", doc)
+        self.assertNotIn("40 MB", doc)
+
+
+class SubmissionLog(S26Fixtures):
+    """The run log carries one `audio: ok/reason` line and can never fail the build."""
+
+    def test_audio_line_degrades(self):
+        from possession import make_submission
+        self.setenv(MTAH_FFMPEG="/nonexistent/ffmpeg")
+        line = make_submission.audio_status_line()
+        self.assertTrue(line.startswith("audio: "), line)
+        self.assertNotIn("\n", line)
 
 
 if __name__ == "__main__":
