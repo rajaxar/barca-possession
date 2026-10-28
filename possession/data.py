@@ -13,12 +13,10 @@ from collections import namedtuple
 import numpy as np
 
 from . import config
+from .structure import HALF_BLOCKS
 
 PITCH_L, PITCH_W = 105.3, 68.0  # games.py GAMES["BAR-ATH"]["pitch"]
 
-# Half boundaries as video frames, inclusive. Organiser-published structure (GUARDRAILS 0):
-# games.half_video_blocks("BAR-ATH") = [(1, 11185, 90651), (2, 110808, 190197)].
-HALF_BLOCKS = ((1, 11185, 90651), (2, 110808, 190197))
 
 _CHUNK = 1 << 24
 _SLOTS = {"tactical": 46, "broadcast": 51}

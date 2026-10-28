@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from possession import config, data
+from possession import config, data, structure
 
 
 def _starter():
@@ -34,7 +34,7 @@ class MatchData(unittest.TestCase):
 
     def test_halves_match_organiser(self):
         games = _starter()
-        self.assertEqual(tuple(games.half_video_blocks("BAR-ATH")), data.HALF_BLOCKS)
+        self.assertEqual(tuple(games.half_video_blocks("BAR-ATH")), structure.HALF_BLOCKS)
 
     def test_gk_slots(self):
         self.assertTrue((self.m.T[self.m.gk[:, 0]] == 0).all())
