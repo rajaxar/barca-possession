@@ -1,0 +1,31 @@
+# Nothing derived from match data is ever committed (the data is gated and not redistributable).
+data/
+*.mp4
+*.npz
+*.npy
+*.pkl
+*.pickle
+*.parquet
+*.gzip
+*.pl3container
+# outputs: submission CSVs are whole-match labels; keep the folder, not the files
+outputs/*
+!outputs/.gitkeep
+# ground truth of any kind (public GT included; it is fetched from the organiser repo, not copied)
+*_gt*.csv
+*_possession_gt*
+# caches and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+.venv/
+venv/
+env/
+*.egg-info/
+.DS_Store
+.idea/
+.vscode/
+
+# agent tooling state
+.omc/

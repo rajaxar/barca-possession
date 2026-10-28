@@ -1,0 +1,3 @@
+# Placeholder; pinned in card S02.
+numpy
+pandas
