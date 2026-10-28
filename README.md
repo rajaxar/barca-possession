@@ -30,13 +30,15 @@ found (see `possession/config.py`).
 
 ## Run
 
-    make submission        # writes outputs/submission.csv
+    make submission        # writes outputs/submission.csv with the deterministic E01 Baseline+
     make validate          # ...and runs the organiser validator on it
     make test
 
 or `python -m possession.make_submission --out outputs/submission.csv`.
 
-The current output is an all-`X` placeholder.
+Baseline+ persists the last near-ball owner's team through gaps, confirms changes with hysteresis,
+marks debounced out-of-bounds intervals dead until ball movement signals a restart, applies the
+published pre-kickoff D mask, and merges sub-0.8 s spells. It writes X only outside the graded halves.
 
 ## Layout
 

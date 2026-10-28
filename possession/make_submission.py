@@ -1,15 +1,17 @@
-"""Entry point: python -m possession.make_submission --out outputs/submission.csv
+"""Generate the deterministic E01 Baseline+ submission.
 
-Currently a stub that abstains everywhere (all X). Valid, scores nothing.
+Usage: python -m possession.make_submission --out outputs/submission.csv
 """
 import argparse
 import os
 
-from possession.config import N_VIDEO_FRAMES
+from possession.baseline_plus import predict
+from possession.data import load_match
 
 
-def build_labels(n_frames=N_VIDEO_FRAMES):
-    return ["X"] * n_frames
+def build_labels():
+    """Load the published tracking inputs and run the unrandomised Baseline+ pipeline."""
+    return predict(load_match())
 
 
 def write_csv(labels, path):
