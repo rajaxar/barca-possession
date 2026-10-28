@@ -327,6 +327,83 @@ class S21BallVisibility(unittest.TestCase):
                     self.assertGreaterEqual(ne_d, ne_a)            # never at their feet
 
 
+class S24DStationarity(unittest.TestCase):
+    """S24: d_stationarity > 0 adds walk-back / retrieval jogs to the players on D frames only."""
+
+    def test_only_player_dead_frames_change_and_knob_is_monotone(self):
+        m, dead = synthetic_match()
+        base = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.5)
+        outs = {k: degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.5, d_stationarity=k)
+                for k in (0.5, 1.0)}
+        again = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.5, d_stationarity=1.0)
+        for x, y in zip(again, outs[1.0]):  # deterministic
+            np.testing.assert_array_equal(x, y)
+        for k, o in outs.items():
+            for f in ("B", "T", "BS", "gk", "half"):  # ball, ids, s channel: byte-identical
+                np.testing.assert_array_equal(getattr(o, f), getattr(base, f))
+            np.testing.assert_array_equal(o.P[~dead], base.P[~dead])  # alive frames untouched
+            np.testing.assert_array_equal(o.V[~dead], base.V[~dead])
+            self.assertTrue(np.isfinite(o.P[dead]).sum() == np.isfinite(base.P[dead]).sum())
+        moved = [np.nanmean(np.hypot(*np.moveaxis(outs[k].P[dead] - base.P[dead], -1, 0)))
+                 for k in (0.5, 1.0)]
+        self.assertGreater(moved[0], 0.0)
+        self.assertGreater(moved[1], moved[0])
+        self.assertGreaterEqual(np.nanmean(outs[1.0].V[dead]), np.nanmean(base.V[dead]))
+        # a jog is an out-and-back bump inside the run: the run edges stay on the observed track
+        a, b = np.flatnonzero(dead)[[0, -1]]
+        np.testing.assert_array_equal(outs[1.0].P[a - 1], base.P[a - 1])
+        np.testing.assert_allclose(outs[1.0].P[a], base.P[a], atol=2e-2)
+        np.testing.assert_allclose(outs[1.0].P[b], base.P[b], atol=2e-2)
+        with self.assertRaises(ValueError):
+            degrade.degrade(m, seed=3, dead=dead, d_stationarity=-0.1)
+
+
+@unittest.skipIf(len(GAMES) < 3, "external dev games not on disk")
+class S24DStationarityGames(unittest.TestCase):
+    """S24: on real games the knob softens the player cue without opening any ball leak."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rec = {}
+        for game_id in (GAMES[0], GAMES[-1]):
+            clean = external.load_game(game_id)
+            dead = np.asarray(clean.ref) == "D"
+            scored = np.zeros(len(dead), bool)
+            for a, b in clean.runs:
+                scored[a:b] = True
+            for k in (0.0, 1.0):
+                game = degrade.degrade_game(clean, seed=0, d_ball_visible=0.5, d_stationarity=k)
+                f = degrade.keeper_ball_feature(game.match)
+                cls.rec[(game_id, k)] = dict(
+                    game=game, dead=dead, scored=scored,
+                    leak=degrade.leak_stats(game.match, game.ref, game.runs, n_null=0),
+                    keeper_d=float(f[scored & dead].mean()),
+                    keeper_alive=float(f[scored & ~dead].mean()),
+                    n_d=int((scored & dead).sum()), n_alive=int((scored & ~dead).sum()))
+
+    def test_player_cue_softens_but_stays_real(self):
+        for game_id in {g for g, _ in self.rec}:
+            r0, r1 = self.rec[(game_id, 0.0)], self.rec[(game_id, 1.0)]
+            with self.subTest(game=game_id):
+                a0 = r0["leak"]["player_speed_mean"]["auc"]  # D slower than alive: AUC < 0.5
+                a1 = r1["leak"]["player_speed_mean"]["auc"]
+                self.assertGreater(a1, a0)                   # cue softened
+                self.assertLess(a1, 0.25)                    # ... but D is still the stiller state
+                self.assertGreater(r1["leak"]["player_speed_mean"]["d_mean"],
+                                   r0["leak"]["player_speed_mean"]["d_mean"])
+
+    def test_no_ball_leak_opens_and_alive_ball_is_unchanged(self):
+        for game_id in {g for g, _ in self.rec}:
+            r0, r1 = self.rec[(game_id, 0.0)], self.rec[(game_id, 1.0)]
+            with self.subTest(game=game_id):
+                np.testing.assert_array_equal(r0["game"].match.B, r1["game"].match.B)
+                for name in ("ball_frozen", "bs_present"):
+                    self.assertLess(abs(r1["leak"][name]["auc"] - 0.5), 0.07, name)
+                self.assertLess(r1["leak"]["teleport"]["d_end_fast"], 0.05)
+        self.assertLessEqual(_pooled_keeper_auc([self.rec[(g, 1.0)] for g, _ in self.rec
+                                                 if _ == 1.0]), 0.55)
+
+
 def _dv_stats(match, keep=None):
     """(dv median, q90 dv within 1.5 m of a player, q90 dv in free flight, separation, jitter mm).
     Mirrors E18 a7 / scratch/S17/kin.dv_stats with w=3; jitter from MAD of second differences."""

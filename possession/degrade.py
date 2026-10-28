@@ -104,6 +104,12 @@ PARAMS = dict(
     # every non-ball channel are byte-identical across settings for the same seed.
     d_ball_visible=0.0, restart_glide_s=8.0, restart_fade_s=2.0, restart_keeper_r=2.0,
     restart_keeper_from_goal=45.0,
+    # S24 D-state player motion (0..1): strength of the walk-back / retrieval jogs added to D
+    # frames. 0 = off, the pipeline is exactly S21/S17. >0: each tracked slot starts a jog on D
+    # frames at `jog_rate`*knob per second (Poisson); a jog is a smooth out-and-back excursion
+    # (sin^2 bump) of a random heading, lasting U(`jog_dur_s`) s with peak speed `jog_peak_v`
+    # m/s (positions and V are updated together; a-priori constants, not fitted to any game).
+    d_stationarity=0.0, jog_rate=0.03, jog_dur_s=(3.0, 8.0), jog_peak_v=4.0,
 )
 
 
@@ -509,6 +515,36 @@ def player_tracks(P, V, T, gk, half, rng, p, level):
     return P2, V2, T2
 
 
+def d_motion(P, V, dead, half, rng, p, strength):
+    """S24: add walk-back / retrieval jogs to the players on D frames (``strength`` 0..1 scales
+    the per-slot jog rate). Each jog is a smooth out-and-back excursion of a random heading
+    (sin^2 bump of duration T, peak speed ``jog_peak_v``), added to the position and, in
+    quadrature, to the speed channel V on the frames where the slot is tracked. Only ``dead``
+    frames change; the jog is clipped to its D run, so it starts and ends at the observed
+    position. Returns copies of (P, V)."""
+    P, V = P.copy(), V.copy()
+    lo, hi = p["jog_dur_s"]
+    rate = p["jog_rate"] * strength / FPS
+    for s, e in _runs(dead):
+        L = e - s
+        for slot in range(P.shape[1]):
+            for t in np.sort(rng.integers(0, L, rng.poisson(rate * L))):
+                n = min(int(rng.uniform(lo, hi) * FPS), L - t)
+                if n < int(lo * FPS):  # a jog truncated by the run end would stay displaced
+                    continue
+                u = np.arange(n) / n
+                amp = p["jog_peak_v"] * (n / FPS) / np.pi
+                ang = rng.uniform(0, 2 * np.pi)
+                bump = amp * np.sin(np.pi * u) ** 2
+                dx = bump[:, None] * np.array([np.cos(ang), np.sin(ang)])
+                spd = amp * np.pi / (n / FPS) * np.abs(np.sin(2 * np.pi * u))
+                sl = slice(s + t, s + t + n)
+                ok = np.isfinite(P[sl, slot, 0])
+                P[sl, slot][ok] += dx[ok]
+                V[sl, slot] = np.where(ok, np.hypot(V[sl, slot], spd), V[sl, slot])
+    return P, V
+
+
 # ---------------------------------------------------------------- 5. ball s channel
 
 def ball_s_channel(n, half, rng, p, level):
@@ -525,13 +561,20 @@ def ball_s_channel(n, half, rng, p, level):
 
 # ---------------------------------------------------------------- API
 
-def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH, d_ball_visible=None):
+def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH, d_ball_visible=None,
+            d_stationarity=None):
     """ATD-like copy of ``match``. ``dead`` (bool per frame) marks frames whose ball is scrubbed
     as a label leak (external D frames); frames with a missing native ball are always scrubbed.
     ``d_ball_visible`` (0..1, S21) is the share of D frames with a tracked ball: at 0 the pipeline
     is exactly S17; at >0 D frames get a restart-placed ball (see :func:`restart_ball`). Can also
-    be given in ``params``; the explicit argument wins."""
+    be given in ``params``; the explicit argument wins. ``d_stationarity`` (0..1, S24) adds
+    walk-back / retrieval jogs to the players on D frames (see :func:`d_motion`); 0 changes
+    nothing."""
     p = dict(PARAMS, **(params or {}))
+    ds = float(p["d_stationarity"] if d_stationarity is None else d_stationarity)
+    if not 0.0 <= ds <= 1.0:
+        raise ValueError("d_stationarity must be in [0, 1], got {}".format(ds))
+    p["d_stationarity"] = ds
     v = float(p["d_ball_visible"] if d_ball_visible is None else d_ball_visible)
     if not 0.0 <= v <= 1.0:
         raise ValueError("d_ball_visible must be in [0, 1], got {}".format(v))
@@ -558,16 +601,19 @@ def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH, d_bal
     gk = external._goalkeepers(P, T, match.half, pitch[0])
     if v > 0:  # S21: restart-placed D ball; runs last, so players and alive ball are unchanged
         B = restart_ball(B, P, T, gk, match.half, dead, rng, p, v, wob, pitch)
+    if ds > 0:  # S24: own RNG stream and last, so every other channel is identical across ds
+        P, V = d_motion(P, V, dead, match.half,
+                        np.random.default_rng([24] + np.atleast_1d(seed).tolist()), p, ds)
     return data.Match(P=P, V=V, T=T, B=B.astype(np.float32), BS=BS, gk=gk,
                       graded=match.graded, half=match.half)
 
 
-def degrade_game(game, level=1.0, seed=0, params=None, d_ball_visible=None):
+def degrade_game(game, level=1.0, seed=0, params=None, d_ball_visible=None, d_stationarity=None):
     """Degraded copy of an external ``evaluate.Game``; its D frames are scrubbed, ref unchanged.
-    ``d_ball_visible``: see :func:`degrade`."""
+    ``d_ball_visible``, ``d_stationarity``: see :func:`degrade`."""
     s = [seed, zlib.crc32(game.name.encode())]
     m = degrade(game.match, level, s, np.asarray(game.ref) == "D", params,
-                d_ball_visible=d_ball_visible)
+                d_ball_visible=d_ball_visible, d_stationarity=d_stationarity)
     return evaluate.Game(game.name, m, game.ref, game.runs)
 
 
