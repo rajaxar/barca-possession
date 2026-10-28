@@ -344,5 +344,113 @@ class ProtocolDecisions(unittest.TestCase):
             self.assertIn(token, text)
 
 
+# ------------------------------------------------------------------ present-ball proxy tests (E42)
+
+
+def _ball_path(xs):
+    """ball_fn for ``_make`` (via keeper_hold): ``xs(f) -> x`` metres on the halfway y line."""
+    return lambda f: (xs(f), PITCH_W / 2)
+
+
+class PresentBallShape(unittest.TestCase):
+    @staticmethod
+    def _xs(f):
+        # moving at 6 m/s until f=300, at rest on the spot 300-380 (3.2 s), moving again after
+        if f < 300:
+            return 95.0 - 0.25 * f
+        if f < 380:
+            return 20.0
+        return 20.0 + 0.25 * (f - 380)
+
+    def _pb(self, speed=1.0, **kw):
+        m, fm = _make(speed_fn=lambda f: speed, keeper_hold=_ball_path(self._xs))
+        return m, dproxy.present_ball(m, _st(fm), **kw)
+
+    def test_static_ball_with_still_players_is_proxy_d(self):
+        _, pb = self._pb()
+        self.assertEqual(pb.info["kind"], "present")
+        self.assertTrue(pb.mask[315:365].all())
+        self.assertFalse(pb.mask[120:280].any())     # ball moving 6 m/s: live
+        self.assertFalse(pb.mask[400:700].any())
+
+    def test_busy_players_veto(self):
+        _, pb = self._pb(speed=3.0)
+        self.assertFalse(pb.mask.any())
+
+    def test_hold_floor(self):
+        # a 0.8 s pause is below the 1 s hold floor
+        m, fm = _make(speed_fn=lambda f: 1.0,
+                      keeper_hold=_ball_path(lambda f: 52.0 if 300 <= f < 320 else 20.0 + 0.4 * f))
+        pb = dproxy.present_ball(m, _st(fm))
+        self.assertFalse(pb.mask[300:320].any())
+
+    def test_disjoint_from_missing_proxy(self):
+        m, fm = _make(speed_fn=lambda f: 1.0, keeper_hold=lambda f: (
+            None if 500 <= f < 600 else _ball_path(self._xs)(f)))
+        st = _st(fm)
+        dm, pb = dproxy.proxy(m, st), dproxy.present_ball(m, st)
+        self.assertTrue(dm.mask[500:600].all())
+        self.assertFalse((dm.mask & pb.mask).any())
+        bo = dproxy.both(m, st)
+        self.assertEqual(bo.info["kind"], "both")
+        self.assertTrue(np.array_equal(bo.mask, dm.mask | pb.mask))
+
+    def test_ungraded_and_forced_never_proxy(self):
+        m, fm = _make(speed_fn=lambda f: 1.0, keeper_hold=_ball_path(lambda f: 52.0))
+        pb = dproxy.present_ball(m, _st(fm))
+        self.assertFalse(pb.mask[:100].any())
+        self.assertFalse(pb.mask[800:900].any())
+        self.assertFalse(pb.mask[fm].any())
+
+    def test_deterministic(self):
+        _, a = self._pb()
+        _, b = self._pb()
+        self.assertTrue(np.array_equal(a.mask, b.mask))
+
+    def test_keeper_exclusion_is_wired(self):
+        m, fm = _make(speed_fn=lambda f: 1.0, keeper_hold=_ball_path(lambda f: 4.5))
+        st = _st(fm)
+        on = dproxy.present_ball(m, st)
+        off = dproxy.present_ball(m, st, dict(exclude_gk=False))
+        self.assertEqual(on.info["gk_source"], "gk_possession")
+        self.assertEqual(off.info["gk_source"], "disabled")
+        self.assertGreaterEqual(int(off.mask.sum()), int(on.mask.sum()))
+
+    def test_bad_params_raise(self):
+        m, fm = _make(speed_fn=lambda f: 1.0)
+        with self.assertRaises(ValueError):
+            dproxy.present_ball(m, _st(fm), dict(near_player_m=0))
+
+
+class PresentProtocol(unittest.TestCase):
+    """adoption_report is proxy-kind aware: the domain follows the target."""
+
+    def setUp(self):
+        self.m, self.gaps = _protocol_match()
+        self.st = _proto_st()
+
+    def test_present_target_refuses_cue_outside_ball_present(self):
+        pb = dproxy.present_ball(self.m, self.st)
+        cue = np.zeros(PROTO_N, bool)
+        for a, _ in self.gaps:
+            cue[a + 10:a + 20] = True
+        with self.assertRaises(ValueError):
+            dproxy.adoption_report(cue, self.m, pb)
+
+    def test_both_target_names_kind_and_decides(self):
+        bo = dproxy.both(self.m, self.st)
+        cue = np.zeros(PROTO_N, bool)
+        for a, _ in self.gaps:
+            cue[a - 50:a - 25] = True
+        r = dproxy.adoption_report(cue, self.m, bo)
+        self.assertEqual(r["decision"], "adopt", dproxy.format_report(r))
+
+    def test_cli_requires_proxy(self):
+        with self.assertRaises(SystemExit):
+            dproxy.main([])
+        with self.assertRaises(SystemExit):
+            dproxy.main(["--proxy", "nonsense", "--cue", "x.npy"])
+
+
 if __name__ == "__main__":
     unittest.main()

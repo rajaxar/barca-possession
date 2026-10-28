@@ -1,4 +1,4 @@
-"""Label-free dead-ball (D) proxy for BAR-ATH, and the adoption protocol for match-only cues.
+"""Label-free dead-ball (D) proxies for BAR-ATH, and the adoption protocol for match-only cues.
 
 This module exists because our strongest inputs (referee audio, broadcast cutaways, camera pan,
 Smart Tagging) exist only on the match we are predicting. They can never be selected on an external
@@ -6,8 +6,17 @@ dev set, so the temptation is to adopt them by looking at the public 5-minute wi
 GUARDRAILS 2 forbids. The answer is not "drop them": it is to score them against one shared,
 label-free target, with a decision rule written down before the test is run.
 
-THE PROXY
----------
+TWO PROXIES, BECAUSE ONE BALL STATE CANNOT COVER D
+-------------------------------------------------
+``proxy()`` needs the ball **missing**; ``present_ball()`` (E42) needs it **tracked and static**.
+On this match the ball is tracked on ~66% of true ``D`` frames (Q08), so the missing-ball proxy is
+blind to most dead time and the present-ball proxy sees a smaller, different slice. They are
+disjoint by construction (a frame cannot be both missing and present) and are meant to be used
+together: ``proxy=mode`` in :func:`adoption_report` and ``--proxy {missing,present,both}`` on the
+CLI force a caller to say which target a cue was scored against.
+
+THE MISSING-BALL PROXY
+----------------------
 A frame is proxy-``D`` iff
 
     the frame is inside a ball-missing run of at least ``MIN_RUN_S`` (2 s)
@@ -62,6 +71,65 @@ KNOWN FAILURE MODES (with numbers, so nobody mistakes the proxy for a measuremen
    score, and cannot validate a threshold on its own. The one absolute check it does carry is the
    published forced-D block, which it must leave alone (see tests).
 
+THE PRESENT-BALL PROXY (``present_ball``, E42)
+----------------------------------------------
+A frame is present-ball proxy-``D`` iff
+
+    the ball is tracked on the frame
+    AND its speed (0.5 s baseline displacement, centred) is <= ``BALL_STILL_V`` (1.0 m/s)
+        for a run of at least ``MIN_HOLD_S`` (1.0 s)
+    AND mean tracked-player speed on the frame is below ``STILL_V`` (1.5 m/s)
+    AND the frame is not goalkeeper-in-possession (E38 carry branch, on by default)
+
+again excluding ungraded frames and the published forced-D block. Every run is classified
+
+* ``placed`` -- no player within ``NEAR_PLAYER_M`` (1.5 m) for most of the run: a ball on the spot,
+  a line or a restart mark;
+* ``held``   -- a player is within ``NEAR_PLAYER_M`` for most of the run: a ball at someone's feet,
+  which is the shape of a player holding the ball during a stoppage *and* of a keeper about to
+  distribute. The keeper case is what the E38 exclusion removes; the outfield case cannot be
+  separated from live play by tracking alone (see the measured precision by class in
+  ``MEASURED_PRESENT``), so it is reported as its own class rather than trusted.
+
+Why each term:
+
+* **1.0 m/s near-rest** -- a ball at rest reads 0.1-0.5 m/s through the ATD's 0.3 s smoothing
+  (E18: sigma ~7-9 frames, jitter 1-3 mm), while a passed or dribbled ball is 2-4 m/s even at
+  walking pace (S06's coupling curve: ball speed median 1.78 m/s at the slowest player decile,
+  the first decile being mostly stopped balls). 1.0 m/s is the top of the "stopped ball" mode and
+  below the slowest rolling mode; it is a physics constant, and the 0.5 s baseline makes it
+  insensitive to jitter.
+* **1.0 s floor** -- the card's floor, and the same "longer than a touch" logic as E25's 2 s
+  missing-run floor: a ball that stops for a second while players are still is not a bounce or a
+  touch. Sensitivity to 0.5/1.0/2.0 s is in the research note; 1.0 s is the pre-registered value.
+* **1.5 m/s collective stillness** -- the same inherited walk/jog boundary as the missing-ball
+  proxy (E15/E25/E38), so a cue can be scored against either target without redefinition.
+* **E38 exclusion** -- a keeper carrying or holding the ball is live play and is exactly the shape
+  that satisfies "ball static/near-static near a player"; it must never become present-ball ``D``.
+  The exclusion is imported, not reimplemented; ``info`` records how many candidate frames it vetoed.
+* **restart context** -- per run, not a gate: distance to the nearest painted line, to the centre
+  spot and to either penalty mark, whether the ball is inside a goal area, and the own-half share
+  of tracked outfield players (S09's kickoff-formation statistic). ``placed`` runs carry the share
+  that are within 2 m of a line, within 9.15 m of the centre spot, in a goal area or on a penalty
+  mark. Context is reported because it is what distinguishes a goal-kick placement from a ball that
+  merely came to rest in open play; it is not used to widen the mask, because a false D costs a
+  possession twice and context alone is cheap to satisfy.
+
+Two dead-with-visible-ball shapes are deliberately **not** in the mask:
+
+* **rolling/carried** (ball moving at 1-3 m/s with a player within reach, collective speed low).
+  This class is computed and reported as ``slow_runs`` but excluded: E36's three broadcast-verified
+  LIVE gaps are walking dribbles at 1.2 m/s mean player speed, and a ball carried off and kicked
+  back in (the human's #14) has the same tracking signature. Tracking alone cannot separate them,
+  so asserting D here would be the one-eyed instrument again. ``include_rolling=True`` is opt-in.
+* **held by a player while static** is *in* the mask but flagged ``held``: it is dead-looking and
+  static (a stationary ball at a stationary player's feet), yet the same geometry occurs when a
+  keeper holds it (excluded by E38) and, briefly, when a player stands over a live ball. The
+  honest statement is that static-held is callable and carried-held is not.
+
+MEASURED_PRESENT (real match, scratch/E42/measure.py) records the proxy's coverage, its
+complementarity with the missing-ball proxy, and the independent checks; it is not a label.
+
 THE ADOPTION PROTOCOL
 ---------------------
 ``adoption_report(cue)`` takes a per-frame cue score and returns a pre-registered decision. The
@@ -86,20 +154,33 @@ statistics are fixed here, before any cue is seen:
   from and carries nothing new (reason ``redundant_with_missingness``). E15 rejected the crowd
   envelope on exactly that conditional number (AUC .625 raw, .490 conditional on missingness).
 * ``inside`` / ``outside`` (raw proxy rate in the after window vs everywhere else) and the
-  **ablation delta** (a frozen D rule ``ball missing`` with the cue's after windows OR-ed in,
-  scored against the proxy over all graded frames; masking the cue removes them) are reported with
-  their own CIs. The ablation is *not* the decision gate: because the proxy is blind to present-ball
-  D, a real onset cue loses it by construction (the whistle loses 0.009), while a state cue that
-  fires for a fifth of the match loses much more (the crowd envelope loses 0.178).
+  **ablation delta** (a frozen ball-state rule with the cue's after windows OR-ed in, scored
+  against the proxy over all graded frames; masking the cue removes them) are reported with their
+  own CIs. The frozen rule is ``ball missing`` for the missing-ball target and ``ball present and
+  static >= 1 s`` (the proxy's own ball half, without its player and keeper gates) for the
+  present-ball target, so in both cases it is "the ball state only" -- the thing a cue must add
+  to. The ablation is *not* the decision gate: because the missing-ball proxy is blind to
+  present-ball D, a real onset cue loses it by construction (the whistle loses 0.009), while a
+  state cue that fires for a fifth of the match loses much more (the crowd envelope loses 0.178).
+
+The **proxy kind** is read from ``proxy_obj.info["kind"]`` (``"missing"``, ``"present"`` or
+``"both"``) and changes only the domain of the refusal/conditional check and the frozen ablation
+rule:
+
+* missing: domain = ball-missing frames (as before E42);
+* present: domain = ball-present frames;
+* both: domain = graded frames (the union target is defined almost everywhere, so the conditional
+  contrast is the raw one; that is stated in the report, not hidden).
 
 Refusals (all before any statistic is computed, so they cannot be negotiated after the fact):
   * ``len(cue) != len(proxy mask)`` -> ValueError (a silent misalignment is the worst failure here);
   * more than ``MAX_NAN_SHARE`` (5%) of graded frames NaN -> ValueError (NaN is not "no evidence";
     a cue that cannot score 5% of the match is not ready). At or below 5%, NaN is scored as 0;
   * infinities -> ValueError;
-  * fewer than ``MIN_DOMAIN_FRAMES`` (100, i.e. 4 s) ball-missing frames in either window ->
-    ValueError: the proxy is blind to present-ball D (failure mode 1), so a cue that only fires
-    there cannot be scored against it, and a spurious zero would be worse than a refusal.
+  * fewer than ``MIN_DOMAIN_FRAMES`` (100, i.e. 4 s) target-domain frames in either window ->
+    ValueError: the missing-ball proxy is blind to present-ball D (failure mode 1) and the
+    present-ball proxy only sees still-present frames, so a cue that fires outside a proxy's
+    domain cannot be scored against it, and a spurious zero would be worse than a refusal.
 
 Blocks for the bootstrap are maximal runs of constant proxy state inside a half, so a draw is a
 contiguous stretch of match, not a frame. Seeds are fixed (``SEED``), so a report is reproducible.
@@ -109,7 +190,7 @@ from collections import namedtuple
 
 import numpy as np
 
-from .structure import PITCH_L, structure
+from .structure import PITCH_L, PITCH_W, structure
 
 FPS = 25.0
 
@@ -117,6 +198,18 @@ FPS = 25.0
 MIN_RUN_S = 2.0      # E25 gap-length gradient .09/.39/.58/.85; Q08 <=1 s runs carry no D
 STILL_V = 1.5        # walk/jog boundary: I01, E25, E15, E38
 SPEED_CLIP = 12.0    # physical sprint guard (E16 speed spikes), not a fitted cut
+
+# ---------------------------------------------------------------- present-ball constants (E42)
+BALL_STILL_V = 1.0   # m/s: top of the "stopped ball" mode (S06 coupling; E18 jitter), below a roll
+MIN_HOLD_S = 1.0     # card's floor: a ball that stops for <1 s is a bounce or a touch, not a stoppage
+BALL_MED_F = 5       # median half-width for the per-frame ball speed (0.2 s)
+BALL_BASE_S = 0.5    # baseline displacement used as the robust ball speed (E18's smoothing scale)
+NEAR_PLAYER_M = 1.5  # ball at someone's feet: E02/I01 proximity radius (E38 use 2 m for a keeper)
+ROLL_V = 3.0         # slowest rolling/carried mode ends here (E38's V_BALL, a brisk walk with the ball)
+LINE_M = 2.0         # a restart ball placed at a line: taker and ball are within a metre or two
+CENTRE_M = 9.15      # centre circle radius (Laws); a kickoff ball is on/near the spot
+SPOT_M = 1.5         # penalty mark is a painted spot; the ball sits on it
+GOAL_AREA_M = 5.5    # 6-yard box depth (Laws); goal kicks are placed inside it
 
 # E25's classifier probe P(D | missing-run length), used only as a *strength* for reporting.
 # Bins are E25's (orchestrator probe, E07 card): <=3 / 3-6 / 6-12 / >12 s.
@@ -144,6 +237,11 @@ D_PROXY_PARAMS = dict(min_run_s=MIN_RUN_S, still_v=STILL_V, speed_clip=SPEED_CLI
                       exclude_gk=True,           # E38 keepers are live play, not D
                       gk_include_gathered=True)  # only branch that can overlap a *missing* ball
 
+D_PRESENT_PARAMS = dict(min_hold_s=MIN_HOLD_S, ball_still_v=BALL_STILL_V, still_v=STILL_V,
+                        speed_clip=SPEED_CLIP, near_player_m=NEAR_PLAYER_M, roll_v=ROLL_V,
+                        base_s=BALL_BASE_S, exclude_gk=True,
+                        include_rolling=False)   # opt-in only; E36's live dribbles live there
+
 DProxy = namedtuple("DProxy", "mask runs missing_runs speed info")
 # mask: (N,) bool, the per-frame proxy (False on ungraded, forced-D and GK frames)
 # runs: list of dict(start, end, frames, seconds, mean_speed, still_share, missing_run, grade)
@@ -153,6 +251,16 @@ DProxy = namedtuple("DProxy", "mask runs missing_runs speed info")
 # speed: (N,) float32 mean tracked-player speed (NaN when no player is tracked)
 # info: dict with the thresholds used, coverage, the GK-exclusion accounting, and the exact
 #       `graded` scope the mask was built on (the protocol reuses it, so they cannot drift apart)
+
+PresentD = namedtuple("PresentD", "mask runs slow_runs vball info")
+# mask: (N,) bool, present-ball proxy D (False on ungraded, forced-D and GK frames)
+# runs: list of dict(start, end, frames, seconds, mean_speed, ball_speed_med, nearest_player_m,
+#       near_player_share, kind "placed"|"held", context dict, placed bool, gk=False)
+# slow_runs: same shape for the rolling/carried class (ball 1-3 m/s, players still) -- reported,
+#       not in `mask` unless include_rolling=True
+# vball: (N,) float32 robust ball speed in m/s (NaN where the ball is missing)
+# info: dict(kind="present", thresholds, coverage of graded/present, gk veto accounting, graded)
+
 
 # ---------------------------------------------------------------- protocol constants (pre-registered)
 AFTER_WINDOW_S = (0.5, 3.0)   # E15 sec. 3: the D-state contrast is measured at +0.5..+3 s
@@ -335,6 +443,7 @@ def proxy(match, st=None, params=None):
 
     n_missing = int(missing.sum())
     info = dict(
+        kind="missing",   # E42: which ball state this target sees; adoption_report switches on it
         params=p, min_run_s=p["min_run_s"], still_v=p["still_v"], speed_clip=p["speed_clip"],
         run_gate=p["run_gate"], gk_source=gk_source,
         n_missing_runs=len(missing_runs),
@@ -355,6 +464,291 @@ def proxy(match, st=None, params=None):
 
 # The card calls it "the proxy"; keep both names.
 d_proxy = proxy
+
+
+# ================================================================ the present-ball proxy (E42)
+
+
+def _robust_ball_speed(B, base_s=BALL_BASE_S):
+    """(N,) ball speed in m/s from a centred baseline displacement; NaN when the ball is missing.
+
+    A per-frame difference is dominated by the ATD's 0.3 s smoothing (E18) and by the tracker
+    dropping the ball for one frame; a 0.5 s baseline is the scale at which "at rest" and "rolling"
+    are actually distinguishable, and it is completely insensitive to sub-frame jitter. Frames whose
+    baseline window contains a missing frame are NaN, so a velocity is never bridged across a gap.
+    """
+    B = np.asarray(B, float)
+    n = len(B)
+    base = max(1, int(round(float(base_s) * FPS)))
+    ok = np.isfinite(B[:, 0])
+    c = np.r_[0, np.cumsum(ok)]
+    f = np.arange(n)
+    lo = np.maximum(0, f - base)
+    hi = np.minimum(n, f + base + 1)
+    span = hi - 1 - lo
+    full = (span >= 2) & (c[hi] - c[lo] == hi - lo)
+    v = np.full(n, np.nan)
+    idx = np.flatnonzero(full)
+    if idx.size:
+        v[idx] = np.linalg.norm(B[hi[idx] - 1] - B[lo[idx]], axis=1) / (span[idx] / FPS)
+    return v.astype(np.float32)
+
+
+def _roll_median(x, w):
+    """Centred rolling nanmedian, edges padded by the edge value (as gk_possession does)."""
+    x = np.asarray(x, float)
+    k = max(1, int(w)) // 2
+    pad = np.pad(x, k, mode="edge")
+    win = np.lib.stride_tricks.sliding_window_view(pad, 2 * k + 1)
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmedian(win, axis=1).astype(np.float32)
+
+
+def nearest_player_m(match, chunk=1 << 14):
+    """(N,) distance from the ball to the nearest tracked player in metres; NaN without a ball.
+
+    Chunked so the (N, 46, 2) difference never materialises for the whole match at float64.
+    """
+    B = np.asarray(match.B, np.float32)
+    P = np.asarray(match.P, np.float32)
+    n = len(B)
+    out = np.full(n, np.nan, np.float32)
+    for a in range(0, n, chunk):
+        b = min(n, a + chunk)
+        d = P[a:b] - B[a:b, None, :]
+        d2 = np.einsum("nij,nij->ni", d, d).astype(np.float32)
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            out[a:b] = np.sqrt(np.nanmin(d2, axis=1))
+    return out
+
+
+def pitch_context(match, st):
+    """Label-free restart geometry per frame: line, centre spot, penalty mark, goal area, formation.
+
+    Returns a dict of (N,) arrays:
+      ``line_m``       distance to the nearest painted line (touchline or goal line);
+      ``centre_m``     distance to the centre spot;
+      ``spot_m``       distance to the nearer penalty mark;
+      ``goal_area``    bool, ball inside either 6-yard box;
+      ``own_half``     share of tracked outfield players in their own half (S09's kickoff statistic).
+
+    Nothing here is fitted; the distances are the Laws' marks (9.15 m centre circle, 11 m penalty
+    spot, 5.5 m goal area) and the lines of the 105.3 x 68 pitch.
+    """
+    B = np.asarray(match.B, float)
+    n = len(B)
+    x, y = B[:, 0], B[:, 1]
+    line_m = np.minimum.reduce([np.abs(x), np.abs(x - PITCH_L), np.abs(y), np.abs(y - PITCH_W)])
+    centre_m = np.hypot(x - PITCH_L / 2, y - PITCH_W / 2)
+    spot_m = np.minimum(np.hypot(x - 11.0, y - PITCH_W / 2),
+                        np.hypot(x - (PITCH_L - 11.0), y - PITCH_W / 2))
+    goal_area = (((x <= GOAL_AREA_M) | (x >= PITCH_L - GOAL_AREA_M))
+                 & (np.abs(y - PITCH_W / 2) <= 9.16))
+    own = np.full(n, np.nan, np.float32)
+    half = np.asarray(match.half)
+    P = np.asarray(match.P, float)
+    for h in (1, 2):
+        sel = np.flatnonzero(half == h)
+        if sel.size == 0:
+            continue
+        cnt = np.zeros(sel.size, np.float32)
+        tot = np.zeros(sel.size, np.float32)
+        for t in (0, 1):
+            s = int(match.gk[h - 1, t])
+            idx = [i for i in np.where(np.asarray(match.T) == t)[0] if i != s]
+            xx = P[sel][:, idx, 0]
+            side = float(st.attack_dir[h - 1, t])
+            cnt += np.nansum((xx - PITCH_L / 2) * side <= 1.0, axis=1)
+            tot += np.sum(np.isfinite(xx), axis=1)
+        with np.errstate(all="ignore"):
+            own[sel] = cnt / np.maximum(1, tot)
+    return dict(line_m=line_m, centre_m=centre_m, spot_m=spot_m, goal_area=goal_area,
+                own_half=own)
+
+
+def _present_gk_live(match, st, p):
+    """E38 keeper-in-possession mask, imported (never reimplemented). Returns (mask, source)."""
+    if not p["exclude_gk"]:
+        return np.zeros(len(match.B), bool), "disabled"
+    try:
+        from . import gk_possession as gk
+        gp = gk.detect(match, st, events=np.zeros(0),
+                       params={"include_gathered": True})   # gathered cannot fire: ball is present
+        return np.asarray(gp.live) > 0, "gk_possession"
+    except Exception:  # missing module: keep the proxy usable, but say so loudly in info
+        return np.zeros(len(match.B), bool), "unavailable"
+
+
+def _run_meta(a, b, vball, speed, near_m, ctx, p):
+    """Per-run summary shared by the mask and the reported (non-mask) classes."""
+    sl = slice(a, b)
+    near = near_m[sl]
+    med_near = float(np.nanmedian(near)) if np.isfinite(near).any() else float("nan")
+    share_near = float(np.nanmean(near <= p["near_player_m"])) if np.isfinite(near).any() else 0.0
+    line_m = float(np.nanmedian(ctx["line_m"][sl]))
+    centre_m = float(np.nanmedian(ctx["centre_m"][sl]))
+    spot_m = float(np.nanmedian(ctx["spot_m"][sl]))
+    goal_area = bool(np.nanmean(ctx["goal_area"][sl]) > 0.5)
+    own_half = float(np.nanmedian(ctx["own_half"][sl]))
+    placed_ctx = bool(line_m <= LINE_M or centre_m <= CENTRE_M or spot_m <= SPOT_M or goal_area)
+    return dict(
+        start=int(a), end=int(b), frames=int(b - a), seconds=float((b - a) / FPS),
+        mean_speed=float(np.nanmean(speed[sl])) if np.isfinite(speed[sl]).any() else float("nan"),
+        ball_speed_med=float(np.nanmedian(vball[sl])) if np.isfinite(vball[sl]).any() else float("nan"),
+        nearest_player_m=med_near, near_player_share=share_near,
+        kind="held" if share_near > 0.5 else "placed",
+        context=dict(line_m=line_m, centre_m=centre_m, spot_m=spot_m,
+                     goal_area=goal_area, own_half=own_half),
+        placed=placed_ctx)
+
+
+def present_ball(match, st=None, params=None):
+    """Label-free D proxy for **dead play with the ball visible** (E42).
+
+    Usage::
+
+        from possession import dproxy, data
+        m = data.load_match()
+        dp = dproxy.proxy(m)             # ball-missing target
+        pb = dproxy.present_ball(m)      # ball-present, at-rest target
+        pb.mask.sum(), len(pb.runs)      # frames, runs
+        pb.runs[0]["kind"], pb.runs[0]["placed"], pb.runs[0]["context"]
+        pb.info["coverage_present"], pb.info["gk_vetoed"]
+        dproxy.adoption_report(cue, m, pb)   # scored against the present-ball target
+
+    The rule and its justification are in the module docstring. The function is deterministic and
+    reads no label; ``params`` overrides :data:`D_PRESENT_PARAMS`. A run's ``grade`` is deliberately
+    absent: E25's P(D | missing-run length) prior is about *missingness* and does not transfer.
+    """
+    p = dict(D_PRESENT_PARAMS, **(params or {}))
+    if p["near_player_m"] <= 0 or p["min_hold_s"] < 0:
+        raise ValueError("near_player_m must be > 0 and min_hold_s >= 0")
+    if st is None:
+        st = structure(match)
+    n = len(match.B)
+    graded = _graded_frames(match, st)
+    B = np.asarray(match.B, float)
+    present = np.isfinite(B[:, 0])
+    speed = mean_player_speed(match, p["speed_clip"])
+    still = np.isfinite(speed) & (speed < p["still_v"])
+    vball = _roll_median(_robust_ball_speed(B, p["base_s"]), BALL_MED_F)
+    near_m = nearest_player_m(match)
+    ctx = pitch_context(match, st)
+    gk_live, gk_source = _present_gk_live(match, st, p)
+
+    # ---- the frozen ball-state half of the rule (used as the ablation base for this target)
+    ball_rest = graded & present & np.isfinite(vball) & (vball <= p["ball_still_v"])
+    base_rule = ball_rest
+
+    # ---- candidate static runs (every one is reported; only those >= min_hold_s reach the mask)
+    min_fr = int(round(p["min_hold_s"] * FPS))
+    static_runs = []
+    cand = np.zeros(n, bool)
+    for a, b in _runs(ball_rest):
+        qualifies = (b - a) >= min_fr
+        if qualifies:
+            cand[a:b] = True
+        static_runs.append(dict(_run_meta(a, b, vball, speed, near_m, ctx, p),
+                                qualifies=bool(qualifies), proxy_frames=0, gk_vetoed_frames=0))
+
+    # ---- the proxy: ball static + collective stillness + not keeper-in-possession
+    mask = cand & still & graded & ~gk_live
+
+    # ---- rolling / carried: same stillness context, ball moving 1-3 m/s. Reported, not asserted.
+    slow = (graded & present & np.isfinite(vball)
+            & (vball > p["ball_still_v"]) & (vball <= p["roll_v"]))
+    slow_runs = []
+    rolling = np.zeros(n, bool)
+    for a, b in _runs(slow):
+        if (b - a) < min_fr:
+            continue
+        rolling[a:b] = True
+        slow_runs.append(dict(_run_meta(a, b, vball, speed, near_m, ctx, p), qualifies=True,
+                              gk_vetoed_frames=int(gk_live[a:b].sum())))
+    rolling_mask = rolling & still & graded & ~gk_live
+    if p["include_rolling"]:
+        mask = mask | rolling_mask
+
+    for sr in static_runs:
+        sr["proxy_frames"] = int(mask[sr["start"]:sr["end"]].sum())
+        sr["gk_vetoed_frames"] = int((gk_live[sr["start"]:sr["end"]] & still[sr["start"]:sr["end"]]
+                                      & graded[sr["start"]:sr["end"]]).sum())
+
+    runs = [dict(_run_meta(a, b, vball, speed, near_m, ctx, p)) for a, b in _runs(mask)]
+    n_present = int((graded & present).sum())
+    info = dict(
+        kind="present",
+        params=p, min_hold_s=p["min_hold_s"], ball_still_v=p["ball_still_v"],
+        still_v=p["still_v"], near_player_m=p["near_player_m"],
+        gk_source=gk_source,
+        n_static_runs=len(static_runs), n_qualifying_runs=int(sum(s["qualifies"]
+                                                                 for s in static_runs)),
+        n_present_frames=n_present, n_ball_rest_frames=int(ball_rest.sum()),
+        n_proxy_frames=int(mask.sum()), n_proxy_runs=len(runs),
+        coverage_graded=float(mask.sum() / max(1, int(graded.sum()))),
+        coverage_present=float(mask.sum() / max(1, n_present)),
+        present_share=float(n_present / max(1, int(graded.sum()))),
+        gk_frames=int((gk_live & graded).sum()),
+        gk_vetoed=int((cand & still & gk_live & graded).sum()),
+        n_placed_runs=int(sum(r["kind"] == "placed" for r in runs)),
+        n_held_runs=int(sum(r["kind"] == "held" for r in runs)),
+        placed_context_frames=int(sum(r["frames"] for r in runs if r["placed"])),
+        n_slow_runs=len(slow_runs), n_slow_frames=int(rolling_mask.sum()),
+        slow_frames_unvetoed=int((rolling & still & graded).sum()),
+        slow_in_gk=int((rolling & still & gk_live & graded).sum()),
+        slow_near_player_share=(float(np.nanmean([s["near_player_share"] for s in slow_runs]))
+                                if slow_runs else 0.0),
+        median_run_s=float(np.median([r["seconds"] for r in runs])) if runs else 0.0,
+        forced_frames_ignored=int(np.asarray(st.forced_dead_mask).sum()),
+        static_runs=static_runs, slow_runs=slow_runs,
+        base_rule=base_rule,           # the ablation's "ball state only" rule for this target
+        graded=graded,                 # the exact scope the mask was built on
+    )
+    return PresentD(mask, runs, slow_runs, vball, info)
+
+
+def both(match, st=None, params=None, present_params=None):
+    """The two targets as one mask: union of the missing-ball and present-ball proxies.
+
+    Returns a :class:`DProxy`-shaped object whose ``info["kind"]`` is ``"both"``, so the same
+    :func:`adoption_report` call works. ``runs`` are the union's maximal runs re-labelled with
+    ``source`` = "missing" | "present" | "mixed"; ``missing_runs`` and ``speed`` come from the
+    missing-ball proxy, and ``info`` carries both children's summaries.
+    """
+    if st is None:
+        st = structure(match)
+    dm = proxy(match, st, params)
+    pb = present_ball(match, st, present_params)
+    union = np.asarray(dm.mask, bool) | np.asarray(pb.mask, bool)
+    runs = []
+    for a, b in _runs(union):
+        ms = bool(dm.mask[a:b].any())
+        ps = bool(pb.mask[a:b].any())
+        runs.append(dict(start=int(a), end=int(b), frames=int(b - a),
+                         seconds=float((b - a) / FPS),
+                         mean_speed=float(np.nanmean(dm.speed[a:b])),
+                         source="mixed" if (ms and ps) else ("missing" if ms else "present")))
+    graded = np.asarray(dm.info["graded"], bool)
+    base_rule = (np.asarray(dm.info.get("base_rule", np.zeros(len(union), bool)))
+                 if "base_rule" in dm.info else
+                 (graded & ~np.isfinite(np.asarray(match.B)[:, 0])))
+    base_rule = np.asarray(base_rule, bool) | np.asarray(pb.info["base_rule"], bool)
+    info = dict(kind="both", params=dm.info["params"], present_params=pb.info["params"],
+                still_v=dm.info["still_v"], min_run_s=dm.info["min_run_s"],
+                min_hold_s=pb.info["min_hold_s"],
+                n_proxy_frames=int(union.sum()), n_proxy_runs=len(runs),
+                coverage_graded=float(union.sum() / max(1, int(graded.sum()))),
+                coverage_missing=dm.info["coverage_missing"],
+                coverage_present=pb.info["coverage_present"],
+                median_run_s=float(np.median([r["seconds"] for r in runs])) if runs else 0.0,
+                n_missing_frames=int(dm.mask.sum()), n_present_frames=int(pb.mask.sum()),
+                overlap_frames=int((dm.mask & pb.mask).sum()),
+                missing_info=dm.info, present_info=pb.info,
+                base_rule=base_rule, graded=graded)
+    return DProxy(union, runs, dm.missing_runs, dm.speed, info)
+
 
 
 # ================================================================ the adoption protocol
@@ -468,14 +862,21 @@ def adoption_report(cue, match, proxy_obj=None, active_thr=None, n_boot=N_BOOT, 
 
     # The proxy's domain: frames where it *can* be D. Everywhere else it is 0 by construction, so
     # agreement there is a prevalence artefact (and E15 rejected the crowd on exactly this).
+    # E42: the target says which ball state it sees; a cue fired outside that state cannot be scored.
+    kind = str(proxy_obj.info.get("kind", "missing"))
+    if kind not in ("missing", "present", "both"):
+        raise ValueError("unknown proxy kind {!r}; expected 'missing', 'present' or 'both'"
+                         .format(kind))
+    present = graded & np.isfinite(np.asarray(match.B)[:, 0])
     missing = graded & ~np.isfinite(np.asarray(match.B)[:, 0])
-    domain = missing
+    domain = dict(missing=missing, present=present, both=graded)[kind]
+    domain_label = dict(missing="ball-missing", present="ball-present", both="graded")[kind]
     n_after = int((after & domain).sum())
     n_before = int((before & domain).sum())
     if n_after < MIN_DOMAIN_FRAMES or n_before < MIN_DOMAIN_FRAMES:
-        raise ValueError("cue windows cover only {} / {} ball-missing frames (need {} each): the "
-                         "proxy is blind to present-ball D, so this cue cannot be scored against it"
-                         .format(n_after, n_before, MIN_DOMAIN_FRAMES))
+        raise ValueError("cue windows cover only {} / {} {} frames (need {} each): a proxy cannot "
+                         "score a cue that does not fire where it can see"
+                         .format(n_after, n_before, domain_label, MIN_DOMAIN_FRAMES))
 
     # ---- descriptive association (inside vs outside), raw: the card's "agreement inside/outside"
     inside_rate = float(mask[after].mean()) if after.any() else float("nan")
@@ -494,9 +895,11 @@ def adoption_report(cue, match, proxy_obj=None, active_thr=None, n_boot=N_BOOT, 
     cond_before = float(mask[before & domain].mean())
     cond_lead = cond_inside - cond_before
 
-    # ---- ablation: cue-free D rule (ball missing) vs the same rule with the cue's after windows
-    base = missing
-    fused = missing | after
+    # ---- ablation: cue-free ball-state rule vs the same rule with the cue's after windows OR-ed in
+    base = np.asarray(proxy_obj.info.get("base_rule", missing), bool)
+    if len(base) != n:
+        base = missing
+    fused = base | after
     n_graded = max(1, int(graded.sum()))
     agree_base = float(np.sum((base == mask)[graded]) / n_graded)
     agree_fused = float(np.sum((fused == mask)[graded]) / n_graded)
@@ -560,14 +963,15 @@ def adoption_report(cue, match, proxy_obj=None, active_thr=None, n_boot=N_BOOT, 
     elif lead_gain < MIN_LEAD_GAIN:
         decision, reason = "park", "effect_below_noise_floor"
     elif cond_lead < MIN_CONDITIONAL_LEAD:
-        decision, reason = "park", "redundant_with_missingness"
+        decision, reason = "park", ("redundant_with_missingness" if kind == "missing"
+                                    else "redundant_with_ball_state")
     else:
         decision, reason = "adopt", "lead_ci_excludes_zero"
 
     warnings = []
     if active.sum() / max(1, int(graded.sum())) > MAX_ACTIVE_SHARE_WARN:
         warnings.append("cue_is_state_not_onset")
-    if ablation < 0:
+    if ablation < 0 and kind == "missing":
         warnings.append("ablation_negative_proxy_blind_to_present_ball_D")
     if nan_share > 0:
         warnings.append("cue_had_nans_scored_as_zero")
@@ -588,8 +992,10 @@ def adoption_report(cue, match, proxy_obj=None, active_thr=None, n_boot=N_BOOT, 
         ablation_delta=ablation, ablation_ci=abl_ci,
         agreement_masked=agree_base, agreement_fused=agree_fused,
         balanced_masked=_bal(base), balanced_fused=_bal(fused),
-        target=dict(proxy_coverage_graded=float(proxy_obj.info.get("coverage_graded", np.nan)),
+        target=dict(kind=kind, domain=domain_label,
+                    proxy_coverage_graded=float(proxy_obj.info.get("coverage_graded", np.nan)),
                     proxy_coverage_missing=float(proxy_obj.info.get("coverage_missing", np.nan)),
+                    proxy_coverage_present=float(proxy_obj.info.get("coverage_present", np.nan)),
                     graded_frames=int(graded.sum())),
         params=dict(after_window_s=AFTER_WINDOW_S, before_window_s=BEFORE_WINDOW_S,
                     n_boot=int(n_boot), seed=int(seed), alpha=float(alpha),
@@ -620,3 +1026,25 @@ def format_report(r):
         "DECISION: {} ({}){}".format(r["decision"], r["reason"],
                                      "  warnings: " + ",".join(r["warnings"]) if r["warnings"] else ""),
     ])
+
+
+def main(argv=None):
+    """``python -m possession.dproxy --proxy {missing,present,both} --cue cue.npy [--thr X]``.
+
+    ``--proxy`` has no default on purpose: a caller must state which dead-ball target the cue is
+    scored against (E42). ``cue.npy`` is an (N,) per-frame array on the match's frame grid.
+    """
+    import argparse
+    ap = argparse.ArgumentParser(prog="dproxy", description=main.__doc__)
+    ap.add_argument("--proxy", required=True, choices=["missing", "present", "both"])
+    ap.add_argument("--cue", required=True, help="path to an (N,) .npy cue")
+    ap.add_argument("--thr", type=float, default=None, help="activation threshold (continuous cues)")
+    a = ap.parse_args(argv)
+    from . import data
+    m = data.load_match()
+    target = dict(missing=proxy, present=present_ball, both=both)[a.proxy](m)
+    print(format_report(adoption_report(np.load(a.cue), m, target, active_thr=a.thr)))
+
+
+if __name__ == "__main__":
+    main()
