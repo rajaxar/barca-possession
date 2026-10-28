@@ -1,0 +1,2 @@
+# Optional, not installed by default. Add exact (==) pins here when a card needs them:
+# torch / ultralytics / audio libs are gated by D03 and R06 decisions (card S02).

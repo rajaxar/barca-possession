@@ -4,7 +4,18 @@ Frame-level football possession (`H`/`A`/`D`/`X`) for BAR-ATH, ranked on spellF1
 
 ## Install
 
-Python 3.9+. `pip install -r requirements.txt` (versions are pinned later).
+## Environment
+
+Python 3.13 (the version the pins were built and tested on). Everything is pinned with `==` in
+`requirements.txt`; `requirements-extra.txt` is an empty placeholder for gated extras.
+
+    python3.13 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    .venv/bin/pip install -e . --no-deps      # installs the `possession` package
+
+The Makefile uses `.venv/bin/python` by default (override with `make PYTHON=...`).
+The `-e` install makes `python -I -m possession.make_submission` work from any directory, since
+`-I` drops the working directory from `sys.path`. Match-data scripts should be run the same way (GUARDRAILS §4).
 
 ## Data
 

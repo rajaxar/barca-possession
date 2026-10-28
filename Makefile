@@ -1,4 +1,4 @@
-PYTHON ?= python
+PYTHON ?= .venv/bin/python
 REPO ?= ../more-than-a-hack-2027
 
 .PHONY: submission test validate
