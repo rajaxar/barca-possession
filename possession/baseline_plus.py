@@ -22,7 +22,7 @@ import numpy as np
 from .structure import PITCH_L, PITCH_W, structure
 
 FPS = 25
-DEFAULT_PARAMS = dict(r=2.5, k=8, m=20, margin=0.5, min_out=6, v_restart=3.0, restart_len=5)
+DEFAULT_PARAMS = dict(r=2.5, k=16, m=20, margin=0.5, min_out=6, v_restart=3.0, restart_len=10)
 
 
 def _evidence(P, T, B, rows, r):
