@@ -47,3 +47,10 @@ def asset_path(asset, source="tactical"):
         if os.path.isfile(path):
             return path
     return os.path.join(folder, names[0])
+
+
+def cache_dir():
+    """Where derived arrays are cached. Gitignored (.cache/) and never inside the data bundle."""
+    path = os.environ.get("MTAH_CACHE_DIR") or os.path.join(SOLUTION_DIR, ".cache")
+    os.makedirs(path, exist_ok=True)
+    return path
