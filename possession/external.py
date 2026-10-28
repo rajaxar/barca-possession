@@ -21,7 +21,8 @@ import numpy as np
 from . import config, data, evaluate
 
 FPS = 25
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2
+KMH_PER_MPS = 3.6  # IDSSE vendor BS (ball speed) is km/h
 _IDSSE_SECTION = {"firstHalf": 1, "secondHalf": 2}
 _FRAMESET_RE = re.compile(
     r'<FrameSet GameSection="([^"]+)"[^>]*TeamId="([^"]+)" PersonId="([^"]+)"')
@@ -190,7 +191,6 @@ def _load_idsse(game_id):
         n_total = sum(lengths.values())
         n_slots = len(player_ids)
         P = np.full((n_total, n_slots, 2), np.nan, np.float32)
-        V = np.full((n_total, n_slots), np.nan, np.float32)
         B = np.empty((n_total, 2), np.float32)
         BZ = np.empty(n_total, np.float32)
         BS = np.empty(n_total, np.float32)  # vendor speed, not the ATD's unexplained s channel
@@ -208,7 +208,7 @@ def _load_idsse(game_id):
             xyz = np.array([[r[1], r[2], r[3]] for r in rows], np.float32)
             B[a:a + n] = xyz[:, :2] + np.array([pitch_l / 2, pitch_w / 2], np.float32)
             BZ[a:a + n] = xyz[:, 2]
-            BS[a:a + n] = np.array([r[4] for r in rows], np.float32)
+            BS[a:a + n] = np.array([r[4] for r in rows], np.float32) / KMH_PER_MPS
             owner = np.array([r[5] for r in rows], np.int8)
             status = np.array([r[6] for r in rows], np.int8)
             if not np.isin(owner, (1, 2)).all() or not np.isin(status, (0, 1)).all():
@@ -236,8 +236,8 @@ def _load_idsse(game_id):
                     n, x, y, z, speed, measured, owner, status = match.groups()
                     row = offsets[section] + int(n) - N[offsets[section]]
                     P[row, current_slot] = (float(x) + pitch_l / 2, float(y) + pitch_w / 2)
-                    V[row, current_slot] = float(speed)
 
+        V = _speed(P, half)  # vendor S is km/h; derive from xy like Metrica so sources share one definition
         T = np.array([players[p] for p in player_ids], np.int8)
         return dict(P=P, V=V, T=T, B=B, BS=BS, BZ=BZ, N=N,
                     gk=_goalkeepers(P, T, half, pitch_l), graded=half > 0, half=half,
