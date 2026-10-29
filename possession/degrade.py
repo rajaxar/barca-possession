@@ -104,6 +104,14 @@ PARAMS = dict(
     # every non-ball channel are byte-identical across settings for the same seed.
     d_ball_visible=0.0, restart_glide_s=8.0, restart_fade_s=2.0, restart_keeper_r=2.0,
     restart_keeper_from_goal=45.0,
+    # S32 taker/gatherer anchor: the resting D ball must not sit isolated from every player
+    # (Q13: the bare spot ball put v>0 ~2x too far from players -> nearest-player AUC .80 vs
+    # ATD .60-.66, median 5.3 m vs 2.2 m). During the stationary part of a visible D run the
+    # ball's wobble centre is pulled to within ``taker_r`` m of the nearest non-keeper player
+    # (a gatherer/taker), ramping in over ``taker_approach_s`` s and fading out over the
+    # restart glide so the ball still meets the observed alive track. Keeper slots are excluded
+    # (a keeper hold is live play, E38), and the 2 m keeper exclusion still runs last.
+    taker_r=2.0, taker_approach_s=4.0,
     # S24 D-state player motion (0..1): strength of the walk-back / retrieval jogs added to D
     # frames. 0 = off, the pipeline is exactly S21/S17. >0: each tracked slot starts a jog on D
     # frames at `jog_rate`*knob per second (Poisson); a jog is a smooth out-and-back excursion
@@ -337,9 +345,29 @@ def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITC
         if not np.isfinite(rest).all():
             rest = spot
         ramp = np.clip((np.arange(L) - (L - glide_fr)) / glide_fr, 0.0, 1.0)
-        path = spot + (rest - spot) * ramp[:, None]
-        path = path + _wobble_run(L, wob_sigma, p["wobble_tau_v"], p["wobble_tau_p"],
-                                  p["wobble_cap"], p["wobble_edge_tau"], rng)
+        base_glide = spot + (rest - spot) * ramp[:, None]
+        wob = _wobble_run(L, wob_sigma, p["wobble_tau_v"], p["wobble_tau_p"],
+                          p["wobble_cap"], p["wobble_edge_tau"], rng)
+        # S32 taker/gatherer anchor: keep the resting ball within ~taker_r m of the nearest
+        # non-keeper player (a gatherer standing over the spot), so it is not an isolated object
+        # on D frames. Anchored only while the ball is stationary (faded out over the restart
+        # glide, which already meets the observed track at a player's feet).
+        approach_fr = max(1, int(round(p["taker_approach_s"] * FPS)))
+        taker_r = float(p["taker_r"])
+        h_run = int(half[s])
+        kg = {int(gk[h_run - 1, 0]), int(gk[h_run - 1, 1])}
+        nk = [j for j in range(P.shape[1]) if j not in kg]
+        Pnk = P[s:e, nk].astype(float)
+        dnk = np.linalg.norm(Pnk - base_glide[:, None, :], axis=-1)
+        dnk = np.where(np.isnan(dnk), np.inf, dnk)
+        taker = Pnk[np.arange(L), dnk.argmin(1)]
+        vec = taker - base_glide
+        norm = np.linalg.norm(vec, axis=1, keepdims=True)
+        # point taker_r m from the gatherer back toward the spot; == base_glide when already near
+        target = taker - (vec / np.maximum(norm, 1e-9)) * np.minimum(norm, taker_r)
+        aw = np.minimum(1.0, np.arange(L) / approach_fr) * (1.0 - ramp)
+        center = (1.0 - aw)[:, None] * base_glide + aw[:, None] * target
+        path = center + wob
         # keeper exclusion, faded at the run edges so the ball still meets the observed track
         w = np.minimum(1.0, np.minimum(np.arange(L) + 1, L - np.arange(L)) / fade)
         for team in (0, 1):

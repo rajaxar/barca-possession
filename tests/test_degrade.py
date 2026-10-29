@@ -251,8 +251,11 @@ class S21BallVisibility(unittest.TestCase):
                     for a, b in game.runs:
                         scored[a:b] = True
                     f = degrade.keeper_ball_feature(game.match)
+                    near = degrade.leak_features(game.match)["nearest_player_m"][scored & dead]
+                    near = near[np.isfinite(near)]
                     cls.rec[(game_id, v, seed)] = dict(
                         game=game, dead=dead, scored=scored,
+                        near_med=float(np.median(near)), near_p5=float((near > 5).mean()),
                         leak=degrade.leak_stats(game.match, game.ref, game.runs, n_null=0),
                         keeper_d=float(f[scored & dead].mean()),
                         keeper_alive=float(f[scored & ~dead].mean()),
@@ -323,8 +326,51 @@ class S21BallVisibility(unittest.TestCase):
                 with self.subTest(v=v, seed=seed):
                     self.assertGreaterEqual(sp_auc, 0.15)          # not a frozen ball (AUC ~0)
                     self.assertGreaterEqual(sp_d, 2.0)             # rolling/placed, not static
-                    self.assertLessEqual(ne_auc, 0.85)             # not glued to players
+                    self.assertLessEqual(sp_auc, 0.40)             # slower than alive, as a resting ball
+                    # S32 / Q13 F1: nearest-player band from ATD-measured, label-free targets
+                    # (research/S06_degradation_fit.md "S32"): ATD forced-D AUC .655 (E42
+                    # placed-D median 2.2 m, forced-D median 3.2 m, P(>5 m) .24-.35). The old
+                    # bare-spot ball gave AUC .80, median 5.3 m, P(>5 m) .53 (2x too isolated).
+                    self.assertGreaterEqual(ne_auc, 0.52)          # still farther than alive
+                    self.assertLessEqual(ne_auc, 0.72)             # not isolated beyond ATD
                     self.assertGreaterEqual(ne_d, ne_a)            # never at their feet
+
+    def test_nearest_player_distance_matches_atd_targets(self):
+        for v in (0.5, 1.0):
+            for seed in (0, 1):
+                med = np.mean([self.rec[(g, v, seed)]["near_med"] for g in GAMES])
+                p5 = np.mean([self.rec[(g, v, seed)]["near_p5"] for g in GAMES])
+                with self.subTest(v=v, seed=seed):
+                    self.assertGreaterEqual(med, 2.0)   # ATD placed-D median 2.2 m
+                    self.assertLessEqual(med, 3.5)      # ATD forced-D median 3.2 m (old: 5.3)
+                    self.assertGreaterEqual(p5, 0.05)
+                    self.assertLessEqual(p5, 0.35)      # ATD P(>5 m) .24-.35 (old: .53)
+
+    def test_run_level_visibility_structure(self):
+        # S32 / Q13 F3: visibility is decided per D run (hidden runs all-NaN, visible all-finite),
+        # and independent of run length.
+        for v in (0.5, 1.0):
+            for seed in (0, 1):
+                vis_all, rho = [], []
+                for g in GAMES:
+                    r = self.rec[(g, v, seed)]
+                    B = r["game"].match.B
+                    runs = degrade._runs(r["dead"])
+                    vis = np.array([np.isfinite(B[a:b, 0]).mean() for a, b in runs])
+                    lens = np.array([b - a for a, b in runs])
+                    vis_all.append(vis)
+                    if vis.std() > 0:
+                        rho.append(np.corrcoef(vis, lens)[0, 1])
+                vis = np.concatenate(vis_all)
+                with self.subTest(v=v, seed=seed):
+                    self.assertTrue(np.all((vis == 0) | (vis == 1)) or v == 1.0 or
+                                    np.mean((vis == 0) | (vis == 1)) > 0.9)
+                    if v == 1.0:
+                        self.assertTrue(np.all(vis == 1))
+                    else:
+                        self.assertLess((vis == 0).mean(), 0.8)
+                        self.assertGreater((vis == 0).mean(), 0.2)
+                        self.assertLess(abs(np.mean(rho)), 0.3)
 
 
 class S24DStationarity(unittest.TestCase):
