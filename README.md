@@ -2,6 +2,13 @@
 
 Frame-level football possession (`H`/`A`/`D`/`X`) for BAR-ATH, ranked on spellF1.
 
+## What we tried
+
+- [docs/WHAT_WE_TRIED.md](docs/WHAT_WE_TRIED.md): every idea we have tested or plan to test, why, and what happened.
+- [docs/HOW_WE_WORK.md](docs/HOW_WE_WORK.md): how we choose methods without tuning on the match itself.
+- [docs/GLOSSARY.md](docs/GLOSSARY.md): the few terms we use.
+- [docs/REFERENCE.md](docs/REFERENCE.md): links from each item to our internal notes.
+
 ## Install
 
 ## Environment
