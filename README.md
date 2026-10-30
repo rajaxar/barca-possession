@@ -13,11 +13,12 @@ Frame-level football possession (`H`/`A`/`D`/`X`) for BAR-ATH, ranked on spellF1
 
 ## Environment
 
-Python 3.13 (the version the pins were built and tested on). Everything is pinned with `==` in
+Python 3.13 (the version the pins were built and tested on). Everything is pinned with `==` and hash-locked
+(`--hash=sha256:`, all cp313/abi3/pure-python wheels and sdists on PyPI, so pip enforces hashes automatically) in
 `requirements.txt`; `requirements-extra.txt` is an empty placeholder for gated extras.
 
     python3.13 -m venv .venv
-    .venv/bin/pip install -r requirements.txt
+    .venv/bin/pip install --no-cache-dir -r requirements.txt   # hashes are enforced
     .venv/bin/pip install -e . --no-deps      # installs the `possession` package
 
 The Makefile uses `.venv/bin/python` by default (override with `make PYTHON=...`).
