@@ -130,8 +130,8 @@ class Synthetic(unittest.TestCase):
             np.testing.assert_array_equal(outs[v].B[~dead], outs[0.0].B[~dead])
         self.assertFalse(np.isnan(outs[1.0].B[dead]).any())  # v=1: whole stoppage tracked
         self.assertFalse(np.array_equal(degrade.degrade(m, seed=4, dead=dead,
-                                                        d_ball_visible=0.5).B[dead],
-                                        outs[0.5].B[dead], equal_nan=True))  # seed changes D ball
+                                                        d_ball_visible=1.0).B[dead],
+                                        outs[1.0].B[dead], equal_nan=True))  # seed changes D ball
         self.assertTrue(np.array_equal(outs[0.5].B[dead], outs[0.5].B[dead], equal_nan=True))
         with self.assertRaises(ValueError):
             degrade.degrade(m, seed=3, dead=dead, d_ball_visible=1.5)
@@ -334,6 +334,47 @@ class S21BallVisibility(unittest.TestCase):
                     self.assertGreaterEqual(ne_auc, 0.52)          # still farther than alive
                     self.assertLessEqual(ne_auc, 0.72)             # not isolated beyond ATD
                     self.assertGreaterEqual(ne_d, ne_a)            # never at their feet
+
+    def test_restart_ball_texture_is_not_a_tell(self):
+        # S34 / E59: the raw restart wobble gave the visible D ball ~20x the jerk of an alive ball
+        # (median 924 vs 46 m/s^3), 5x the acceleration, and teleports -- fully separable and with
+        # the opposite sign to ATD, where still-looking balls are smoother than live ones (jerk
+        # AUC D>live .42, accel .28, label-free targets in research/S06_degradation_fit.md S34).
+        # Pooled over games and knob seeds: jerk is at the live level, D acceleration is not above
+        # live, and D frames carry no fast (>30 m/s) frame-to-frame steps.
+        from scipy.stats import rankdata
+        for v in (0.5, 1.0):
+            for seed in (0, 1):
+                jd, ja, ad, aa, fast, nd = [], [], [], [], 0, 0
+                for g in GAMES:
+                    r = self.rec[(g, v, seed)]
+                    B = r["game"].match.B.astype(float)
+                    half = r["game"].match.half
+                    v1 = np.diff(B, axis=0) * degrade.FPS
+                    a1 = np.diff(v1, axis=0) * degrade.FPS
+                    j1 = np.diff(a1, axis=0) * degrade.FPS
+                    ok = np.zeros(len(B), bool)   # frame t valid: B[t-3..t] finite, same half
+                    ok[3:] = (np.isfinite(B[3:, 0]) & np.isfinite(B[2:-1, 0]) & np.isfinite(B[1:-2, 0])
+                              & np.isfinite(B[:-3, 0]) & (half[3:] == half[:-3]) & (half[3:] > 0))
+                    m = ok & r["scored"]
+                    jerk = np.full(len(B), np.nan); acc = np.full(len(B), np.nan)
+                    jerk[3:] = np.linalg.norm(j1, axis=1); acc[2:] = np.linalg.norm(a1, axis=1)
+                    d = r["dead"]
+                    jd.append(jerk[m & d]); ja.append(jerk[m & ~d])
+                    ad.append(acc[m & d]); aa.append(acc[m & ~d])
+                    sp = np.linalg.norm(v1, axis=1)
+                    mm = (m & d)[1:]
+                    fast += int((sp[mm] > 30).sum()); nd += int(mm.sum())
+                jd, ja, ad, aa = (np.concatenate(x) for x in (jd, ja, ad, aa))
+                ratio = np.median(jd) / np.median(ja)
+                x = np.r_[ad, aa]
+                rk = rankdata(x)
+                acc_auc = (rk[:len(ad)].sum() - len(ad) * (len(ad) + 1) / 2) / (len(ad) * len(aa))
+                with self.subTest(v=v, seed=seed):
+                    self.assertGreaterEqual(ratio, 0.5)    # not smoother than a real ball's jitter floor
+                    self.assertLessEqual(ratio, 2.0)       # E59: 20x
+                    self.assertLessEqual(acc_auc, 0.55)    # E59: .89 (D rougher); ATD .28
+                    self.assertLessEqual(fast / nd, 0.001)  # E59-era teleports: ~1% of D frames
 
     def test_nearest_player_distance_matches_atd_targets(self):
         for v in (0.5, 1.0):

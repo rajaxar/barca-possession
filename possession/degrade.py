@@ -112,6 +112,21 @@ PARAMS = dict(
     # restart glide so the ball still meets the observed alive track. Keeper slots are excluded
     # (a keeper hold is live play, E38), and the 2 m keeper exclusion still runs last.
     taker_r=2.0, taker_approach_s=4.0,
+    # S34 restart-ball texture (E59: the raw S21/S32 restart ball was 20x rougher than live and
+    # fully separable, texture AUC 1.000, with the opposite sign to ATD's still-looking balls).
+    # restart_wobble_lp > 0 switches the block on (0 = raw S21/S32 wobble): the wobble is
+    # Gaussian-smoothed (sigma frames, like the vendor filter on every live ball), scaled by
+    # restart_wobble_gain, capped and edge-ramped after smoothing (so run ends meet the alive
+    # track), and given the live balls' white jitter (their jerk floor). restart_wobble_tau_v is
+    # the wobble's velocity memory in frames (0 = wobble_tau_v; ATD still balls hold their
+    # heading). restart_center_lp smooths the taker-anchor pull: the nearest-player switch
+    # otherwise teleports the ball (hundreds of >30 m/s frames per game). Gain/tau_v were
+    # matched to ATD speed/accel aggregates only. restart_wobble_spread (per-run lognormal sigma
+    # of the wobble scale) and restart_rest_p (share of runs with no wobble) do not move texture
+    # AUC (ablation: .921 vs .920) but keep the S32 nearest-player median in band (3.2 m vs
+    # 3.5 m without them, test limit 3.5), so they are kept.
+    restart_wobble_lp=8.0, restart_wobble_gain=2.4, restart_wobble_spread=1.0, restart_rest_p=0.08,
+    restart_wobble_tau_v=150.0, restart_center_lp=8.0,
     # S24 D-state player motion (0..1): strength of the walk-back / retrieval jogs added to D
     # frames. 0 = off, the pipeline is exactly S21/S17. >0: each tracked slot starts a jog on D
     # frames at `jog_rate`*knob per second (Poisson); a jog is a smooth out-and-back excursion
@@ -346,8 +361,23 @@ def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITC
             rest = spot
         ramp = np.clip((np.arange(L) - (L - glide_fr)) / glide_fr, 0.0, 1.0)
         base_glide = spot + (rest - spot) * ramp[:, None]
-        wob = _wobble_run(L, wob_sigma, p["wobble_tau_v"], p["wobble_tau_p"],
-                          p["wobble_cap"], p["wobble_edge_tau"], rng)
+        if p["restart_wobble_lp"] > 0:
+            # S34: smooth/scale first, then cap and edge-ramp, so the run ends meet the alive track
+            wob = _wobble_run(L, wob_sigma, p["restart_wobble_tau_v"] or p["wobble_tau_v"], p["wobble_tau_p"],
+                              np.inf, 1.0, rng)
+            wob = gaussian_filter1d(wob, p["restart_wobble_lp"], axis=0, mode="nearest") * p["restart_wobble_gain"]
+            wob = wob * float(np.exp(rng.normal(0, p["restart_wobble_spread"])))
+            if rng.random() < p["restart_rest_p"]:
+                wob = wob * 0.0
+            norm = np.linalg.norm(wob, axis=1)
+            wob = wob * (np.minimum(norm, p["wobble_cap"]) / np.maximum(norm, 1e-9))[:, None]
+            kk = np.arange(L)
+            wob = wob * np.minimum(1.0, np.minimum(kk + 1, L - kk) / p["wobble_edge_tau"])[:, None]
+            # live balls also carry the vendor's white jitter (ball_noise): it sets their jerk floor
+            wob = wob + rng.normal(0, p["ball_white_sigma"], wob.shape)
+        else:
+            wob = _wobble_run(L, wob_sigma, p["wobble_tau_v"], p["wobble_tau_p"],
+                              p["wobble_cap"], p["wobble_edge_tau"], rng)
         # S32 taker/gatherer anchor: keep the resting ball within ~taker_r m of the nearest
         # non-keeper player (a gatherer standing over the spot), so it is not an isolated object
         # on D frames. Anchored only while the ball is stationary (faded out over the restart
@@ -367,6 +397,10 @@ def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITC
         target = taker - (vec / np.maximum(norm, 1e-9)) * np.minimum(norm, taker_r)
         aw = np.minimum(1.0, np.arange(L) / approach_fr) * (1.0 - ramp)
         center = (1.0 - aw)[:, None] * base_glide + aw[:, None] * target
+        if p["restart_center_lp"] > 0:
+            # smooth only the taker pull (zero at both run ends), so the spot->rest glide keeps its timing
+            center = base_glide + gaussian_filter1d(center - base_glide, p["restart_center_lp"],
+                                                    axis=0, mode="nearest")
         path = center + wob
         # keeper exclusion, faded at the run edges so the ball still meets the observed track
         w = np.minimum(1.0, np.minimum(np.arange(L) + 1, L - np.arange(L)) / fade)
