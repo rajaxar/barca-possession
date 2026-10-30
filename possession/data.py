@@ -57,7 +57,7 @@ def _file_hash(*paths):
             dirty = True
         h.update(entry["hash"].encode())
     if dirty:
-        tmp = memo_path + ".tmp"
+        tmp = config.tmp_path(memo_path)
         with open(tmp, "w") as f:
             json.dump(memo, f)
         os.replace(tmp, memo_path)
@@ -72,7 +72,7 @@ def _cached(name, paths, build):
         with np.load(target) as z:
             return {k: z[k] for k in z.files}
     arrays = build()
-    tmp = target + ".tmp.npz"
+    tmp = config.tmp_path(target)
     np.savez(tmp, **arrays)
     os.replace(tmp, target)
     return arrays

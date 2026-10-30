@@ -1,5 +1,6 @@
 """Paths and file-name resolution. The only place that knows where the match data lives."""
 import os
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOLUTION_DIR = os.path.dirname(HERE)
@@ -54,3 +55,10 @@ def cache_dir():
     path = os.environ.get("MTAH_CACHE_DIR") or os.path.join(SOLUTION_DIR, ".cache")
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def tmp_path(target):
+    """Unique sibling of `target` (same extension) to write to before os.replace, so concurrent
+    writers of one cache never share a temporary file."""
+    stem, ext = os.path.splitext(target)
+    return "{}.tmp{}-{}{}".format(stem, os.getpid(), uuid.uuid4().hex[:8], ext)

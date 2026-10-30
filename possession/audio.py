@@ -539,7 +539,7 @@ def _cache_path(video, kind, extra, cfg=CFG):
 
 
 def _save(path, **arrays):
-    tmp = path[:-4] + ".tmp%d.npz" % os.getpid()
+    tmp = config.tmp_path(path)
     np.savez(tmp, **arrays)
     os.replace(tmp, path)
 

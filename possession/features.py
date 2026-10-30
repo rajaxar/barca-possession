@@ -458,7 +458,7 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
 
     result = pd.DataFrame(values, columns=FEATURE_COLUMNS)
     if path is not None:
-        temporary = path + ".tmp.parquet"
+        temporary = config.tmp_path(path)
         result.to_parquet(temporary, index=False)
         os.replace(temporary, path)
     return result

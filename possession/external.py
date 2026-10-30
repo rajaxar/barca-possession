@@ -106,7 +106,7 @@ def _cached(key, paths, build):
     arrays = build()
     arrays["_cache_version"] = np.array(_CACHE_VERSION)
     arrays["_source_stamps"] = np.array(stamps)
-    tmp = target + ".tmp.npz"
+    tmp = config.tmp_path(target)
     np.savez(tmp, **arrays)
     os.replace(tmp, target)
     return {name: value for name, value in arrays.items() if not name.startswith("_")}
