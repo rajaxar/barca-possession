@@ -15,7 +15,7 @@ those dead gaps into D so they contain no H/A frame to re-decode. :func:`footpri
 :func:`check_footprint` are the label-free guard (no public GT): the build must fail if the gated
 stack changes more than ``MAX_CHANGED_SHARE`` of the graded frames.
 
-The D gate itself is not part of this module; ``labels`` must already be D-gated. Default off:
+The D gate itself is not part of this module; ``labels`` must already be D-gated. Default on (D08):
 :func:`apply` returns its input untouched unless ``enabled`` (module flag ``ENABLED``) is true.
 """
 import numpy as np
@@ -23,11 +23,13 @@ import numpy as np
 from . import ballfree
 from . import baseline_plus as bp
 
-ENABLED = False
+ENABLED = True                                       # D08: ships on, chained after the D gate only
 LAM = float(np.log(0.743 * 13.06 * ballfree.HZ))   # R08 prior, 3.88 nats per switch
 MIN_GAP = 50                                         # frames (2 s), E25's ball-missing run convention
 PH_CLIP = 0.02
 MAX_CHANGED_SHARE = 0.03                             # Q17 footprint bound (measured 0.0116 gated)
+MAX_PRESENT_SHARE = 0.05                             # D08: changes on ball-present frames, share of changes
+MAX_SPELL_RATIO = 1.36                               # D08: spells after / before
 CODE = {"H": 0, "A": 1, "D": 2, "X": 3}
 NAME = np.array(["H", "A", "D", "X"])
 
@@ -128,6 +130,11 @@ def check_footprint(fp, max_share=MAX_CHANGED_SHARE):
                            % (fp["changed_share_graded"], max_share))
     if fp["changed_in_dead"]:
         raise RuntimeError("ingap changed %d frames inside E25 dead gaps" % fp["changed_in_dead"])
+    if fp["changed_on_ball_present_share"] > MAX_PRESENT_SHARE:
+        raise RuntimeError("ingap changed %.3f of its changes on ball-present frames (> %.2f)"
+                           % (fp["changed_on_ball_present_share"], MAX_PRESENT_SHARE))
+    if fp["spells_after"] > MAX_SPELL_RATIO * max(1, fp["spells_before"]):
+        raise RuntimeError("ingap spells %d -> %d exceed x%.2f" % (fp["spells_before"], fp["spells_after"], MAX_SPELL_RATIO))
     return fp
 
 

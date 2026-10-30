@@ -17,10 +17,10 @@ def scene(n=600, gap=(100, 400), ph_pattern=None):
 
 
 class InGap(unittest.TestCase):
-    def test_off_by_default_returns_input(self):
+    def test_disabled_returns_input(self):
         lab, B, half, ph = scene()
-        self.assertFalse(ingap.ENABLED)
-        self.assertIs(ingap.apply(lab, B, half, ph), lab)
+        self.assertTrue(ingap.ENABLED)                # D08: ships on
+        self.assertIs(ingap.apply(lab, B, half, ph, enabled=False), lab)
 
     def test_recovers_in_gap_handover(self):
         lab, B, half, _ = scene()

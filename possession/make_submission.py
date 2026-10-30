@@ -1,17 +1,43 @@
-"""Generate the deterministic E01 Baseline+ submission.
+"""Generate the deterministic submission: Baseline+ -> missing-ball D gate (B04) -> optional in-gap decoder.
+
+The gate's P(D) model is trained at build time on the external games only (see :mod:`possession.dgate`).
+The in-gap ball-free decoder (D08: on by default) runs strictly after the gate; if the gate is disabled it is skipped too.
 
 Usage: python -m possession.make_submission --out outputs/submission.csv
 """
 import argparse
 import os
 
+from possession import dgate, ingap, structure
 from possession.baseline_plus import predict
 from possession.data import load_match
 
 
+def ingap_ph(match):
+    """Ball-free P(H) per frame from a model trained on the external games only (never on the match)."""
+    from possession import ballfree, external
+    tabs = []
+    for gid in dgate.training_games():
+        _, X, Xs, y = ballfree.game_table(external.load_game(gid))
+        k = y >= 0
+        tabs.append((X[k], Xs[k], y[k]))
+    model = ballfree.fit(tabs, "hgb")
+    return ballfree.predict_frames(model, match, pitch=(structure.PITCH_L, structure.PITCH_W))
+
+
 def build_labels():
-    """Load the published tracking inputs and run the unrandomised Baseline+ pipeline."""
-    return predict(load_match())
+    """Baseline+, then the missing-ball D gate, then (if enabled) the in-gap decoder; logs each footprint."""
+    match = load_match()
+    labels = predict(match)
+    if not dgate.ENABLED:                 # ingap is only safe on D-gated labels (Q17): forced off with the gate
+        return labels
+    labels, dead, fp = dgate.apply(labels, match)
+    print("dgate:", fp)
+    if ingap.ENABLED:
+        gated = labels
+        labels = ingap.apply(gated, match.B, match.half, ingap_ph(match), dead=dead)
+        print("ingap:", ingap.footprint(gated, labels, match.B, match.half, dead))
+    return labels
 
 
 def audio_status_line():
