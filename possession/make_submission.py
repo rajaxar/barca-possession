@@ -1,14 +1,16 @@
-"""Generate the deterministic submission: Baseline+ -> missing-ball D gate (B04) -> optional in-gap decoder.
+"""Generate the deterministic submission: Baseline+ -> missing-ball D gate (B04) -> optional grown present-ball D (E66)
+-> optional in-gap decoder -> optional sub-gap gate (E66).
 
 The gate's P(D) model is trained at build time on the external games only (see :mod:`possession.dgate`).
-The in-gap ball-free decoder (D08: on by default) runs strictly after the gate; if the gate is disabled it is skipped too.
+The in-gap ball-free decoder (D08: on by default) runs strictly after the gate; if the gate is disabled it and both E66
+add-ons (:mod:`possession.growd`, :mod:`possession.subgap`; each has its own ``ENABLED`` flag) are skipped too.
 
 Usage: python -m possession.make_submission --out outputs/submission.csv
 """
 import argparse
 import os
 
-from possession import dgate, ingap, structure
+from possession import dgate, growd, ingap, structure, subgap
 from possession.baseline_plus import predict
 from possession.data import load_match
 
@@ -31,12 +33,21 @@ def build_labels():
     labels = predict(match)
     if not dgate.ENABLED:                 # ingap is only safe on D-gated labels (Q17): forced off with the gate
         return labels
-    labels, dead, fp = dgate.apply(labels, match)
+    model = dgate.build_model()
+    labels, dead, fp = dgate.apply(labels, match, model=model)
     print("dgate:", fp)
+    gated = labels
+    labels, fp = growd.apply(gated, match, dead=dead)
+    if fp:
+        print("growd:", fp)
     if ingap.ENABLED:
-        gated = labels
-        labels = ingap.apply(gated, match.B, match.half, ingap_ph(match), dead=dead)
-        print("ingap:", ingap.footprint(gated, labels, match.B, match.half, dead))
+        grown = labels
+        labels = ingap.apply(grown, match.B, match.half, ingap_ph(match), dead=dead)
+        print("ingap:", ingap.footprint(grown, labels, match.B, match.half, dead))
+    if subgap.ENABLED:
+        pf = dgate.frame_pd(*model, match.P, match.V, match.T, match.half)
+        labels, fp = subgap.apply(labels, gated, match, pf, fired=dead)
+        print("subgap:", fp)
     return labels
 
 
