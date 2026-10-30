@@ -38,6 +38,12 @@ looks like the BAR-ATH tactical ATD to a possession model, with ``ref`` and ``ru
    exclusion zone, E38) visible on a share ``d_ball_visible`` of D frames in semi-Markov runs;
    the rest of the D frames are NaN. Alive frames never change across knob settings.
 
+7. **Gap composition** (E50/E74, ``dropout_live_cap_s``, default off): step 3 places gaps independent of
+   game state, which puts live play into long gaps (the ATD's long gaps are stoppages). The cap restores
+   the pre-dropout ball on live frames inside NaN runs longer than the cap (:func:`live_cap`);
+   ``d_gap_jitter`` offsets hidden D runs' NaN edges from the stoppage edges (:func:`restart_ball`).
+   ``DEV_V1_PARAMS`` holds the fitted values.
+
 Every distribution and rate is fitted to label-free statistics of our own ATD input
 (:func:`input_stats` on ``data.load_match()``); no ground truth of any game is read. The fitted
 values and the ATD targets are in ``research/S06_degradation_fit.md``. ``level`` scales every
@@ -133,7 +139,22 @@ PARAMS = dict(
     # (sin^2 bump) of a random heading, lasting U(`jog_dur_s`) s with peak speed `jog_peak_v`
     # m/s (positions and V are updated together; a-priori constants, not fitted to any game).
     d_stationarity=0.0, jog_rate=0.03, jog_dur_s=(3.0, 8.0), jog_peak_v=4.0,
+    # E50/E74 dropout live cap (s; None = off = S34 exactly): ``ball_dropout`` places gaps independent
+    # of game state, so 42% of live frames had no ball (BAR-ATH ~3%) and 35-39% of long-gap frames
+    # were live play (BAR-ATH <= ~4%). With a cap, after the dropout and the D-ball step, every
+    # NaN run longer than the cap gets its pre-dropout ball back on all non-dead frames (see
+    # :func:`live_cap`); D-NaN frames stay NaN, so long gaps are stoppages like the ATD's.
+    dropout_live_cap_s=None,
+    # E50 gap-edge jitter (0 = off = S34 exactly; 1 = fitted to BAR-ATH): a hidden D run's NaN
+    # window starts/ends offset from the stoppage edge by N(mu, sd) seconds (gap edge minus
+    # stoppage edge) x the knob, per edge, own RNG stream. Fitted label-free (research/E50).
+    d_gap_jitter=0.0, gap_jitter_on_s=(0.0, 4.0), gap_jitter_end_s=(0.0, 3.0),
 )
+
+# E50: the fitted gap-composition settings for dev-v1 (pass as ``params``; both knobs are off in PARAMS).
+# Cap 6 s = E74's proposal, checked against label-free BAR-ATH aggregates; jitter 0.25 = the largest knob
+# whose composition (P(NaN|live) <= .05, live share of long gaps <= 4%, P(D)-dip share <= ~1%) still holds.
+DEV_V1_PARAMS = dict(dropout_live_cap_s=6.0, d_gap_jitter=0.25)
 
 
 # ---------------------------------------------------------------- helpers
@@ -313,7 +334,8 @@ def _visible_runs(L, visible, rng):
     return [(0, L)]
 
 
-def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITCH):
+def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITCH, B_ctx=None,
+                 jrng=None, edge_nan=None):
     """S21: restart-placed D ball at visibility ``visible`` (0..1). Per D run the ball sits at the
     stoppage spot (last observed position before the run; if none, the restart point; if none, the
     player centroid), glides onto the restart point (first observed position after the run) over
@@ -324,14 +346,23 @@ def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITC
     keeper-hold geometry on D frames). Each D run is visible (IDSSE-like) with probability
     ``visible`` and NaN throughout (Metrica-like) otherwise; the expected share of D frames with a
     tracked ball is exactly ``visible``. Frames outside ``dead`` are untouched, so alive frames
-    are identical across knob settings for the same seed."""
+    are identical across knob settings for the same seed.
+
+    ``B_ctx`` (E50): ball used to find each run's stoppage spot / restart point (default ``B``);
+    pass the pre-dropout ball when :func:`live_cap` will restore it, so the spot is the true last
+    ball. ``jrng`` (E50, ``p["d_gap_jitter"]`` > 0): hidden runs' NaN window is shifted at each
+    edge by a draw from ``gap_jitter_{on,end}_s`` x knob seconds; frames of the run it uncovers
+    get the restart ball, frames it extends over (non-dead only) are set NaN and flagged in the
+    bool array ``edge_nan`` (so :func:`live_cap` does not undo them)."""
     out = B.copy()
+    Bc = B if B_ctx is None else B_ctx
+    jit = float(p["d_gap_jitter"]) if jrng is not None else 0.0
     fade = max(1, int(round(p["restart_fade_s"] * FPS)))
     keeper_r = float(p["restart_keeper_r"])
     glide_fr = max(1, int(round(p["restart_glide_s"] * FPS)))
     K = _keeper_positions(P, T, gk, half, pitch, p["restart_keeper_from_goal"])
     # last/first observed ball index per frame, within each half (post-dropout B)
-    finite = np.isfinite(B[:, 0])
+    finite = np.isfinite(Bc[:, 0])
     last = np.full(len(B), -1, np.int64)
     first = np.full(len(B), len(B), np.int64)
     for h in (1, 2):
@@ -353,8 +384,8 @@ def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITC
         rest_i = first[e] if e < len(B) else len(B)
         if rest_i >= len(B) or half[rest_i] != half[s]:
             rest_i = -1
-        spot = B[spot_i].astype(float) if spot_i >= 0 else np.full(2, np.nan)
-        rest = B[rest_i].astype(float) if rest_i >= 0 else np.full(2, np.nan)
+        spot = Bc[spot_i].astype(float) if spot_i >= 0 else np.full(2, np.nan)
+        rest = Bc[rest_i].astype(float) if rest_i >= 0 else np.full(2, np.nan)
         if not np.isfinite(spot).all():
             spot = rest if np.isfinite(rest).all() else C[s]
         if not np.isfinite(rest).all():
@@ -415,6 +446,50 @@ def restart_ball(B, P, T, gk, half, dead, rng, p, visible, wob_sigma, pitch=PITC
         out[s:e] = np.nan
         for a, b in vis:
             out[s + a:s + b] = path[a:b]
+        if jit > 0 and not vis:
+            # E50: shift the hidden run's NaN window (draws taken for every hidden run, in order)
+            h0, h1 = [(a_, b_) for h_, a_, b_ in _halves(half) if h_ == h_run][0]
+            d_on = int(round(FPS * jit * (p["gap_jitter_on_s"][0] + p["gap_jitter_on_s"][1] * jrng.normal())))
+            d_end = int(round(FPS * jit * (p["gap_jitter_end_s"][0] + p["gap_jitter_end_s"][1] * jrng.normal())))
+            lo, hi = s + d_on, e + d_end
+            if hi <= lo:
+                out[s:e] = path
+                continue
+            if d_on > 0:
+                out[s:min(lo, e)] = path[:min(d_on, L)]
+            elif d_on < 0:
+                x = np.arange(max(lo, h0), s)
+                x = x[~dead[x]]
+                out[x] = np.nan
+                if edge_nan is not None:
+                    edge_nan[x] = True
+            if d_end < 0:
+                out[max(hi, s):e] = path[L + max(d_end, -L):]
+            elif d_end > 0:
+                x = np.arange(e, min(hi, h1))
+                x = x[~dead[x]]
+                out[x] = np.nan
+                if edge_nan is not None:
+                    edge_nan[x] = True
+    return out
+
+
+def live_cap(B, B_pre, dead, half, cap_s, protect=None):
+    """E50/E74: in every NaN run longer than ``cap_s`` seconds (within a half), restore the
+    pre-dropout ball ``B_pre`` on the frames that are not ``dead`` (and not in ``protect``, the
+    edge-jitter frames). Dead frames, hence D-NaN runs, stay NaN: long gaps are stoppages."""
+    out = B.copy()
+    thr = int(round(cap_s * FPS))
+    miss = ~np.isfinite(B[:, 0])
+    keep = ~np.asarray(dead, bool)
+    if protect is not None:
+        keep &= ~protect
+    keep &= np.isfinite(B_pre[:, 0])
+    for _, a0, b0 in _halves(half):
+        for a, b in _runs(miss[a0:b0]):
+            if b - a > thr:
+                r = slice(a0 + a, a0 + b)
+                out[r][keep[r]] = B_pre[r][keep[r]]
     return out
 
 
@@ -656,13 +731,22 @@ def degrade(match, level=1.0, seed=0, dead=None, params=None, pitch=PITCH, d_bal
                    p["wobble_tau_v"], p["wobble_tau_p"], p["wobble_cap"], p["wobble_edge_tau"])
     B = lowpass(B, match.half, p["smooth_ball_sigma"] * level)
     B = ball_noise(B, match.half, rng, p, level)
+    B_pre = B
     B = ball_dropout(B, match.P, match.half, rng, p, level, pitch)
     P, V = lowpass_players(match.P, match.V, match.half, p["smooth_player_sigma"] * level)
     P, V, T = player_tracks(P, V, match.T, match.gk, match.half, rng, p, level)
     BS = ball_s_channel(n, match.half, rng, p, level)
     gk = external._goalkeepers(P, T, match.half, pitch[0])
+    cap = p["dropout_live_cap_s"]
+    edge_nan = np.zeros(n, bool)
     if v > 0:  # S21: restart-placed D ball; runs last, so players and alive ball are unchanged
-        B = restart_ball(B, P, T, gk, match.half, dead, rng, p, v, wob, pitch)
+        jrng = None
+        if p["d_gap_jitter"] > 0:  # E50: own stream, so nothing else moves with the knob
+            jrng = np.random.default_rng([50] + np.atleast_1d(seed).tolist())
+        ctx = None if cap is None else np.where(np.isfinite(B[:, :1]), B, B_pre)
+        B = restart_ball(B, P, T, gk, match.half, dead, rng, p, v, wob, pitch, ctx, jrng, edge_nan)
+    if cap is not None:  # E50/E74: long gaps are stoppages, not live play
+        B = live_cap(B, B_pre, dead, match.half, cap, edge_nan)
     if ds > 0:  # S24: own RNG stream and last, so every other channel is identical across ds
         P, V = d_motion(P, V, dead, match.half,
                         np.random.default_rng([24] + np.atleast_1d(seed).tolist()), p, ds)

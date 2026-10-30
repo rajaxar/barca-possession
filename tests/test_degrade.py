@@ -136,6 +136,55 @@ class Synthetic(unittest.TestCase):
         with self.assertRaises(ValueError):
             degrade.degrade(m, seed=3, dead=dead, d_ball_visible=1.5)
 
+    def test_live_cap_restores_live_ball_in_long_gaps_only(self):
+        # E50/E74: with dropout_live_cap_s, NaN runs longer than the cap hold dead frames only;
+        # the knob is off (byte-identical) by default and touches nothing but the ball.
+        m, dead = synthetic_match()
+        base = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.05)
+        off = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.05,
+                              params={"dropout_live_cap_s": None})
+        self.assertEqual(_digest(base.B, base.P), _digest(off.B, off.P))
+        cap_s = 6.0
+        cap = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.05,
+                              params={"dropout_live_cap_s": cap_s})
+        for f in ("P", "V", "T", "BS", "half"):
+            np.testing.assert_array_equal(getattr(cap, f), getattr(base, f))
+        miss = ~np.isfinite(cap.B[:, 0])
+        self.assertTrue(np.isnan(base.B[~dead, 0]).any())  # the uncapped dropout does hide live play
+        for h in (1, 2):
+            idx = np.flatnonzero(m.half == h)
+            lo = idx[0]
+            for a, b in degrade._runs(miss[lo:idx[-1] + 1]):
+                if b - a > cap_s * 25:
+                    self.assertFalse((miss[lo + a:lo + b] & ~dead[lo + a:lo + b]).any())
+        # dead frames keep their NaN pattern; live frames only gain a ball
+        np.testing.assert_array_equal(miss[dead], np.isnan(base.B[dead, 0]))
+        self.assertLessEqual(miss[~dead].sum(), np.isnan(base.B[~dead, 0]).sum())
+
+    def test_gap_jitter_shifts_hidden_run_edges(self):
+        # E50: d_gap_jitter=0 is the default; at 1 a hidden run's NaN window moves by the fitted
+        # (here deterministic: sd 0) offsets, uncovering restart ball at the start and hiding live
+        # frames after the end.
+        m, dead = synthetic_match()
+        p = {"gap_jitter_on_s": (3.0, 0.0), "gap_jitter_end_s": (2.0, 0.0)}
+        base = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.01, params=p)
+        self.assertTrue(np.isnan(base.B[1000:1400, 0]).all())  # hidden run, knob 0
+        j = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.01,
+                            params=dict(p, d_gap_jitter=1.0))
+        for f in ("P", "V", "T", "BS", "half"):
+            np.testing.assert_array_equal(getattr(j, f), getattr(base, f))
+        self.assertTrue(np.isfinite(j.B[1000:1075, 0]).all())          # onset 3 s late: ball shows
+        self.assertTrue(np.isnan(j.B[1075:1450, 0]).all())             # NaN window 1075..1450
+        np.testing.assert_array_equal(j.B[:1000], base.B[:1000])
+        k = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.01,
+                            params=dict(p, d_gap_jitter=0.5))
+        self.assertTrue(np.isfinite(k.B[1000:1037, 0]).all())          # the knob scales the offsets
+        self.assertTrue(np.isnan(k.B[1038:1425, 0]).all())
+        # jitter stays out of the live cap: the live frames it hides are not restored
+        c = degrade.degrade(m, seed=3, dead=dead, d_ball_visible=0.01,
+                            params=dict(p, d_gap_jitter=1.0, dropout_live_cap_s=6.0))
+        self.assertTrue(np.isnan(c.B[1400:1450, 0]).all())
+
 
 @unittest.skipUnless(os.path.isfile(config.asset_path("atd_raw")), "match data not present")
 class FittedTargets(unittest.TestCase):
@@ -412,6 +461,37 @@ class S21BallVisibility(unittest.TestCase):
                         self.assertLess((vis == 0).mean(), 0.8)
                         self.assertGreater((vis == 0).mean(), 0.2)
                         self.assertLess(abs(np.mean(rho)), 0.3)
+
+
+@unittest.skipUnless(os.path.isfile(config.asset_path("atd_raw")), "match data not present")
+class GapComposition(unittest.TestCase):
+    """E50/E74: the dev-v1 settings put ball-missing time where the ATD has it (label-free BAR-ATH
+    targets: P(NaN | live) .01-.05, long gaps (>= 16 s) almost all stoppage, missing share ~.40)."""
+
+    def test_dev_v1_gap_composition(self):
+        live_nan = live = long_live = long_all = miss = graded = 0
+        for gid in GAMES[:3]:
+            g = external.load_game(gid)
+            ref = np.asarray(g.ref)
+            m = degrade.degrade_game(g, seed=0, d_ball_visible=0.12, params=degrade.DEV_V1_PARAMS).match
+            isnan = ~np.isfinite(m.B[:, 0])
+            alive = (ref == "H") | (ref == "A")
+            lg = np.zeros(len(isnan), bool)
+            for h in (1, 2):
+                idx = np.flatnonzero(m.half == h)
+                for a, b in degrade._runs(isnan[idx[0]:idx[-1] + 1]):
+                    if b - a >= 16 * 25:
+                        lg[idx[0] + a:idx[0] + b] = True
+            gr = m.half > 0
+            live_nan += (isnan & alive & gr).sum()
+            live += (alive & gr).sum()
+            long_all += lg.sum()
+            long_live += (lg & alive).sum()
+            miss += (isnan & gr).sum()
+            graded += gr.sum()
+        self.assertTrue(0.01 <= live_nan / live <= 0.06)
+        self.assertLessEqual(long_live / long_all, 0.05)   # S34 default: .35-.39
+        self.assertTrue(0.30 <= miss / graded <= 0.50)     # BAR-ATH .407
 
 
 class S24DStationarity(unittest.TestCase):
