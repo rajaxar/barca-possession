@@ -1,6 +1,6 @@
 """Match structure: half blocks, kickoffs, attack direction and the forced-D mask.
 
-Organiser-published structure is stated here as constants with its source (GUARDRAILS 0, D-007).
+Organizer-published structure is stated here as constants with its source (GUARDRAILS 0, D-007).
 Everything else (attack direction) is computed from tracking. `kickoff_formation` and the Smart
 Tagging comparison in the tests are consistency checks only; they are not inputs.
 """
@@ -63,7 +63,7 @@ def kickoff_formation(match, frame, window=25):
     """Consistency check of a kickoff frame, measured over frames..frame+window.
 
     Returns dict: own_half_frac (share of tracked outfield players on their own side of the halfway
-    line, given the attack direction), ball_to_centre_m (median ball distance to the centre spot, NaN
+    line, given the attack direction), ball_to_center_m (median ball distance to the center spot, NaN
     if no ball), n_tracked (median tracked players).
     """
     s = structure(match)
@@ -75,11 +75,11 @@ def kickoff_formation(match, frame, window=25):
         idx = [i for i in np.where(match.T == t)[0] if i != match.gk[h - 1, t]]
         x = P[:, idx, 0]
         side = s.attack_dir[h - 1, t]
-        own += np.nansum((x - PITCH_L / 2) * side <= 1.0)  # 1 m slack for the centre circle line
+        own += np.nansum((x - PITCH_L / 2) * side <= 1.0)  # 1 m slack for the center circle line
         tot += np.sum(~np.isnan(x))
     ball = match.B[sl]
     d = np.linalg.norm(ball - np.array([PITCH_L / 2, PITCH_W / 2]), axis=1)
     return dict(own_half_frac=float(own / tot),
-                ball_to_centre_m=float(np.nanmedian(d)) if np.any(~np.isnan(d)) else float("nan"),
+                ball_to_center_m=float(np.nanmedian(d)) if np.any(~np.isnan(d)) else float("nan"),
                 n_tracked=float(np.median(np.sum(~np.isnan(P[..., 0]), axis=1))))
 

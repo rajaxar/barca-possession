@@ -1,10 +1,10 @@
 """The ONLY sanctioned entry point to the public-window ground truth (GUARDRAILS section 2).
 
-Prints the organiser's numbers for a submission CSV so we can check the pipeline is wired
+Prints the organizer's numbers for a submission CSV so we can check the pipeline is wired
 correctly. Record the number; never tune, select or pick a version by it.
 
     python -I scripts/sanity_public.py [submission.csv] [--bootstrap N]
-    python -I scripts/sanity_public.py --check-baselines   # wrapper reproduces the organiser's reports
+    python -I scripts/sanity_public.py --check-baselines   # wrapper reproduces the organizer's reports
     python -I scripts/sanity_public.py --label-contingency # definitional check: does D coincide with ball absence?
 """
 import argparse
@@ -25,7 +25,7 @@ BANNER = """\
 
 
 def check_baselines(gt_path):
-    """Score the organiser's four published baselines (not our predictions) and compare with their reports."""
+    """Score the organizer's four published baselines (not our predictions) and compare with their reports."""
     eval_dir = os.path.join(config.repo_dir(), "evaluation")
     pm = evaluate.pm
     gt = pm.label_codes(pm.read_label_csv(gt_path))
@@ -38,7 +38,7 @@ def check_baselines(gt_path):
             if round(abs(r[k] - rep[k]), 12) != 0:
                 bad += 1
                 print("MISMATCH {} {}: wrapper {} report {}".format(name, k, r[k], rep[k]))
-    print("baselines match organiser reports" if not bad else "{} mismatches".format(bad))
+    print("baselines match organizer reports" if not bad else "{} mismatches".format(bad))
     return 1 if bad else 0
 
 
@@ -104,7 +104,7 @@ def label_contingency(gt_path, n_boot=2000, seed=0):
             m / col_tot["missing"] if col_tot["missing"] else float("nan")))
     print("{:>3}   {:>9} {:>9} {:>9}".format("all", col_tot["missing"], col_tot["present"], n))
 
-    print("\nrow-normalised (share of the label's frames that are missing / present)")
+    print("\nrow-normalized (share of the label's frames that are missing / present)")
     for name, c in rows:
         m = int(np.sum((frames == c) & ~pres))
         p = int(np.sum((frames == c) & pres))
@@ -163,7 +163,7 @@ def label_contingency(gt_path, n_boot=2000, seed=0):
             pure, maj, len(rr), pure / len(rr) if rr else float("nan"),
             maj / len(rr) if rr else float("nan")))
 
-    # -- the forced-D 2H pre-kickoff block (organiser structure) -----------------------------
+    # -- the forced-D 2H pre-kickoff block (organizer structure) -----------------------------
     half2_first = structure.HALF_BLOCKS[1][1]
     ko2 = structure.KICKOFFS[2]
     block = np.zeros(len(present), bool)
@@ -200,7 +200,7 @@ def label_contingency(gt_path, n_boot=2000, seed=0):
         print("  run {:>2}  {:>6.1f}s  {:>5} frames  P(D)={:.3f}".format(
             k, (b - a) / 25.0, b - a, float(np.mean(gt[a:b] == pm.D))))
 
-    print("\nforced-D 2H pre-kickoff block (organiser structure, {}-{}, {} frames)".format(
+    print("\nforced-D 2H pre-kickoff block (organizer structure, {}-{}, {} frames)".format(
         half2_first, ko2 - 1, ko2 - half2_first))
     print("  frames of it inside the graded public window: {}".format(in_window))
     print("  (the public window is entirely in the 1st half, so the block is EXCLUDED from every")
@@ -218,7 +218,7 @@ def main(argv=None):
                     default=os.path.join(config.SOLUTION_DIR, "outputs", "submission.csv"))
     ap.add_argument("--bootstrap", type=int, default=0)
     ap.add_argument("--check-baselines", action="store_true",
-                    help="check the scorer wrapper against the organiser's baseline reports, then exit")
+                    help="check the scorer wrapper against the organizer's baseline reports, then exit")
     ap.add_argument("--label-contingency", action="store_true",
                     help="definitional check only: GT label x ball presence over the graded public frames")
     ap.add_argument("--n-boot", type=int, default=2000,

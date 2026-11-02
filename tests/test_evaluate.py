@@ -1,4 +1,4 @@
-"""Scorer wrapper, diagnostics and diff are consistent. Never reads the public GT (the organiser-baseline
+"""Scorer wrapper, diagnostics and diff are consistent. Never reads the public GT (the organizer-baseline
 check lives in scripts/sanity_public.py --check-baselines, GUARDRAILS 2)."""
 import os
 import unittest

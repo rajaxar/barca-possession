@@ -5,14 +5,14 @@ tonal ridges ~400 Hz apart in the 3.4-4.7 kHz band lasting 0.4-1.2 s (R06: measu
 published kickoffs, where the whistle ends 0.4-0.7 s before the kickoff frame). Crowd noise is
 broadband below ~2.5 kHz; fan whistles are single *swept* ridges. The detector is therefore a
 local spectral-contrast test: a frame is a whistle frame if its strongest narrow-band ridge is
->= 20 dB above the local spectral neighbourhood (+-95/155 Hz) and a second ridge at least 235 Hz
+>= 20 dB above the local spectral neighborhood (+-95/155 Hz) and a second ridge at least 235 Hz
 away is >= 12 dB up. Nothing here is learned, seeded or tuned on a score; the thresholds are
 R06's, chosen from the physics of the sound and the published kickoff spectrograms
 (GUARDRAILS 1.0: a league kickoff is structure, not a label).
 
 Outputs:
   * `whistle_events(video)`      -> events at 25 fps (start/end/peak frame + f1/f2/contrast)
-  * `crowd_envelope(video)`      -> 0.3-3 kHz crowd loudness at 25 Hz, normalised per half
+  * `crowd_envelope(video)`      -> 0.3-3 kHz crowd loudness at 25 Hz, normalized per half
   * `d_evidence(match, events)`  -> per-frame soft D evidence: a weight in [0, 1], an additive
                                    log-odds increment and its posterior, gated by tracking
                                    stillness. Never a hard D rule (p <= 0.80).
@@ -54,7 +54,7 @@ HOP = 512                  # 32 ms hop -> 31.25 STFT frames per second
 TONE_BAND_HZ = (3300.0, 4900.0)   # search band (a little wider than the peak band)
 PEAK_BAND_HZ = (3400.0, 4700.0)   # R06: both ridges live here
 CROWD_BAND_HZ = (300.0, 3000.0)   # R06-c: crowd loudness, everything a whistle is not
-CONTRAST_REF_HZ = (95.0, 155.0)   # local neighbourhood: just outside a ridge's own skirt
+CONTRAST_REF_HZ = (95.0, 155.0)   # local neighborhood: just outside a ridge's own skirt
 C1_MIN_DB = 20.0           # strongest ridge vs local floor
 C2_MIN_DB = 12.0           # second ridge vs local floor
 MIN_SEP_HZ = 235.0         # rejects a single ridge's skirts / low-f0 harmonic stacks
@@ -83,10 +83,10 @@ AUDIO_TIMEOUT_S = 300.0
 # any truncation that could hide or move a whistle.
 SAMPLE_TOL_S = 1.0
 
-# Feature arrays at the STFT rate (t: seconds, centre of the window).
+# Feature arrays at the STFT rate (t: seconds, center of the window).
 Feat = namedtuple("Feat", "t c1 f1 c2 f2 crowd_db")
 # One whistle is a row of EVENT_DTYPE below: 0-based video frames (submission rows), 25 fps, so
-# frame f is at t = f / 25 s (organiser convention: frame_id = video_frame + 1, R06 §1).
+# frame f is at t = f / 25 s (organizer convention: frame_id = video_frame + 1, R06 §1).
 Track = namedtuple("Track", "events ok reason video")
 # Soft evidence. p / log_odds are (N,) float32; gate / onset_frame are one value per event.
 Evidence = namedtuple("Evidence", "p log_odds gate onset_frame events gain")
@@ -277,7 +277,7 @@ def pcm_chunks(video, start=0.0, duration=None, chunk=1 << 20, sr=SR,
 
 # ------------------------------------------------------------------ chunked STFT -> features
 def _contrast(L, ref_bins):
-    """Level minus the louder of the two neighbours at +-d bins, for each d; -inf at the edges."""
+    """Level minus the louder of the two neighbors at +-d bins, for each d; -inf at the edges."""
     floor = np.float32(-120.0)
     ref = np.full_like(L, floor)
     n = L.shape[1]
@@ -390,7 +390,7 @@ def _drop(chunks, k):
         yield chunk
 
 
-def analyse(video, start=0.0, duration=None, cfg=CFG, cache=True, info=None, timeout=None):
+def analyze(video, start=0.0, duration=None, cfg=CFG, cache=True, info=None, timeout=None):
     """Stream the audio from the video and return Feat at the STFT rate (t = absolute seconds).
 
     The per-frame features are cached under config.cache_dir(), keyed by a content fingerprint of
@@ -548,7 +548,7 @@ def _save(path, **arrays):
 def whistle_events(video=None, start=0.0, duration=None, cfg=CFG, cache=True, timeout=None):
     """Whistle events for the tactical audio, at 25 fps. Missing video / ffmpeg / audio -> ok=False.
 
-    Video frames follow the organisers' convention: time of frame f (0-based) is f / 25 s
+    Video frames follow the organizers' convention: time of frame f (0-based) is f / 25 s
     (R06; the ATD frame_id is video_frame + 1). Never raises: a failed, truncated or timed-out
     decode returns `ok=False` with a token reason and no events, and nothing is cached.
     """
@@ -573,7 +573,7 @@ def whistle_events(video=None, start=0.0, duration=None, cfg=CFG, cache=True, ti
         except (OSError, ValueError, KeyError):
             pass
     try:
-        feat = analyse(video, start=start, duration=duration, cfg=cfg, cache=cache, info=info,
+        feat = analyze(video, start=start, duration=duration, cfg=cfg, cache=cache, info=info,
                        timeout=timeout)
         ev = detect(feat, cfg)
     except AudioUnavailable as exc:
@@ -609,9 +609,9 @@ def status_line(video=None, track=None):
 
 
 def crowd_from_feat(feat, n_frames=None, t0=0.0):
-    """(N,) crowd loudness at 25 Hz, robust-z normalised within each half (R06-c).
+    """(N,) crowd loudness at 25 Hz, robust-z normalized within each half (R06-c).
 
-    `t0` shifts a Feat built on a relative clock; `analyse` returns absolute times, so it is 0.
+    `t0` shifts a Feat built on a relative clock; `analyze` returns absolute times, so it is 0.
     """
     n_frames = config.N_VIDEO_FRAMES if n_frames is None else int(n_frames)
     out = np.full(n_frames, np.nan, np.float32)
@@ -635,7 +635,7 @@ def crowd_from_feat(feat, n_frames=None, t0=0.0):
 
 
 def crowd_envelope(video=None, start=0.0, duration=None, cfg=CFG, n_frames=None, cache=True):
-    """(N,) crowd loudness at 25 Hz, robust-z normalised *within each half* (R06-c).
+    """(N,) crowd loudness at 25 Hz, robust-z normalized *within each half* (R06-c).
 
     N defaults to config.N_VIDEO_FRAMES. NaN outside the two halves and wherever the audio is
     missing. This is a diagnostic candidate only: E25 found crowd loudness does not separate D
@@ -656,7 +656,7 @@ def crowd_envelope(video=None, start=0.0, duration=None, cfg=CFG, n_frames=None,
         except (OSError, ValueError, KeyError):
             pass
     try:
-        feat = analyse(video, start=start, duration=duration, cfg=cfg, cache=cache)
+        feat = analyze(video, start=start, duration=duration, cfg=cfg, cache=cache)
     except RuntimeError:
         return np.full(n_frames, np.nan, np.float32)
     out = crowd_from_feat(feat, n_frames, t0=0.0)  # feat.t is already absolute time

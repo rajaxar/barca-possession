@@ -1,7 +1,7 @@
 """Baseline+ (E01): persistent last owner, hysteresis, out-of-bounds D and spell merging.
 
 The input evidence is deliberately simple: when the ball is present, the nearest tracked player's
-team is evidence only if that player is within ``r`` metres. Otherwise the previous owner persists
+team is evidence only if that player is within ``r`` meters. Otherwise the previous owner persists
 through flights, loose balls and tracking gaps. A new owner needs ``k`` supporting evidence frames;
 missing frames neither advance nor cancel that candidacy. The accepted switch is back-dated to the
 candidacy's first frame, so confirmation does not add output lag.
@@ -9,7 +9,7 @@ candidacy's first frame, so confirmation does not add output lag.
 A debounced excursion beyond the pitch by ``margin`` starts D. It ends at the first sustained run of
 in-pitch ball movement (``v_restart`` and ``restart_len``). Published pre-kickoff frames are supplied
 by :mod:`possession.structure`; all other ungraded frames remain X. Finally, H/A spells shorter than
-``m`` frames are absorbed into a neighbouring H/A spell, or into D when both neighbours are D.
+``m`` frames are absorbed into a neighboring H/A spell, or into D when both neighbors are D.
 
 No public labels are read or fitted. Defaults are football-sensible placeholders until the external
 dev loaders are ready (S05/S06): 2.5 m rejects distant receivers during flight; 8 evidence frames are
@@ -26,7 +26,7 @@ DEFAULT_PARAMS = dict(r=2.5, k=16, m=20, margin=0.5, min_out=6, v_restart=3.0, r
 
 
 def _evidence(P, T, B, rows, r):
-    """Return nearest-team codes (0/1) within r metres for ``rows``, else -1."""
+    """Return nearest-team codes (0/1) within r meters for ``rows``, else -1."""
     ev = np.full(len(rows), -1, np.int8)
     ok = ~np.isnan(B[rows, 0])
     idx = rows[ok]
@@ -133,9 +133,9 @@ def _merge_short(lab, m):
         if not candidates:
             return lab
         _, s = min(candidates)
-        neighbours = [t for t in (s - 1, s + 1) if 0 <= t < len(starts) and vals[t] < 2]
-        if neighbours:
-            t = max(neighbours, key=lambda t: lens[t])
+        neighbors = [t for t in (s - 1, s + 1) if 0 <= t < len(starts) and vals[t] < 2]
+        if neighbors:
+            t = max(neighbors, key=lambda t: lens[t])
             lab[starts[s]:stops[s]] = vals[t]
         else:
             lab[starts[s]:stops[s]] = 2
@@ -158,7 +158,15 @@ def predict_arrays(P, T, B, half, forced, params=None, pitch=(PITCH_L, PITCH_W))
     return np.array(["H", "A", "D", "X"])[codes]
 
 
-def predict(match, params=None):
-    """Return an (N,) H/A/D/X label array for a :class:`possession.data.Match`."""
-    forced = structure(match).forced_dead_mask
-    return predict_arrays(match.P, match.T, match.B, match.half, forced, params)
+def predict(match, params=None, forced=None, pitch=None):
+    """Return an (N,) H/A/D/X label array for a :class:`possession.data.Match`.
+
+    ``forced`` is the published pre-kickoff D mask (``structure.forced_dead_mask``); computed from
+    the match when omitted, so the shipped pipeline can run ``structure`` as its own first stage.
+    ``pitch`` overrides the BAR-ATH (105.3 x 68) default for external practice games.
+    """
+    if forced is None:
+        forced = structure(match).forced_dead_mask
+    if pitch is None:
+        return predict_arrays(match.P, match.T, match.B, match.half, forced, params)
+    return predict_arrays(match.P, match.T, match.B, match.half, forced, params, pitch=pitch)

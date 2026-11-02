@@ -4,8 +4,8 @@ Per contiguous half the ball track is cleaned (physically implausible jumps are 
 most ``fill`` frames are interpolated, then the track is split into present stretches). A touch
 candidate is a local maximum of the velocity change across a frame (``|v_out - v_in|`` over ``w``
 frames each side, on a lightly smoothed track) that exceeds a threshold *calibrated on the game
-itself* and has a player within ``r`` metres. The threshold is ``median + c * sigma_MAD`` of the same statistic
-on free-flight frames (no player within ``far`` metres), floored at ``floor`` m/s, so no number
+itself* and has a player within ``r`` meters. The threshold is ``median + c * sigma_MAD`` of the same statistic
+on free-flight frames (no player within ``far`` meters), floored at ``floor`` m/s, so no number
 transfers between datasets (R03). A tail quantile was tried and dropped: on the ATD the free-flight
 tail holds real touches by untracked players. No labels, public GT or event data are read.
 

@@ -149,7 +149,7 @@ All columns are `float32`. `home`/`away` are common-format team ids 0/1, not inf
 | 56 | `away_mean_speed_delta_mps2` | m/s² | Per-second derivative of away mean team speed. |
 | 57 | `away_pressing_mps` | m/s | Away mean velocity component toward home centroid. |
 | 58 | `bbox_area_ratio_home_away` | ratio | Home bounding-box area divided by away area; NaN unless both areas >= 10 m². |
-| 59 | `camera_look_at_x_m` | m | Image centre (960,540) unprojected through homography, x in metres. |
+| 59 | `camera_look_at_x_m` | m | Image center (960,540) unprojected through homography, x in meters. |
 | 60 | `ball_out_of_pitch` | 0/1 | Ball is finite and outside `[0,L] x [0,W]`; NaN if ball absent. |
 | 61 | `ball_s_present` | 0/1 | Raw common-format `BS` channel is finite; makes no semantic assumption. |
 | 62 | `attacker_tag_coverage_home` | intervals | Active attacker-side Smart Tag intervals assigned to home. |

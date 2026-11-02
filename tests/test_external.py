@@ -68,7 +68,7 @@ class SkillCorner(unittest.TestCase):
             self.assertFalse(np.isnan(game.match.B[game.match.graded]).any(), game_id)
 
     def test_derived_d_is_not_the_raw_null_group(self):
-        """Null-group flight/line cases are relabelled; the raw vendor labels are kept for audit."""
+        """Null-group flight/line cases are relabeled; the raw vendor labels are kept for audit."""
         arrays = external._load_skillcorner(SKILL[0].split(":", 1)[1])
         ref, raw = np.asarray(arrays["ref"]), np.asarray(arrays["ref_raw"])
         graded = ref != "X"

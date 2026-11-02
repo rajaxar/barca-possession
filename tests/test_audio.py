@@ -1,4 +1,4 @@
-"""Tests for the whistle detector: synthetic-signal behaviour, 25 fps frame mapping, graceful
+"""Tests for the whistle detector: synthetic-signal behavior, 25 fps frame mapping, graceful
 degradation (no mp4 / no ffmpeg / no audio track), determinism, and the soft-P(D) contract.
 
 No match data is needed for the core tests; the two integration tests skip when the tactical mp4 or

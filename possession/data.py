@@ -1,7 +1,7 @@
 """Match data loader: tracking (ATD), Smart Tagging and broadcast alignment, as numpy arrays.
 
 Everything is indexed by *video frame* 0..N_VIDEO_FRAMES-1 (the submission row). The ATD is already
-on the video timeline with frame_id = video_frame + 1 (starter/load_atd.py). Coordinates are metres
+on the video timeline with frame_id = video_frame + 1 (starter/load_atd.py). Coordinates are meters
 on the 105.3 x 68 pitch. Parsed arrays are cached under config.cache_dir(), keyed by file hash.
 """
 import hashlib
@@ -24,9 +24,9 @@ _FRAMES = {"tactical": config.N_VIDEO_FRAMES, "broadcast": 164488}  # games.SOUR
 
 # Tactical player slots: team 0 = home (first <Team> in the metadata XML), 1 = away.
 Match = namedtuple("Match", "P V T B BS gk graded half")
-# P (N,46,2) float32 metres, NaN = untracked; V (N,46) m/s; T (46,) int8 team per slot;
-# B (N,2) ball xy metres, NaN when missing; BS (N,) ball 's' channel (unexplained, kept separate);
-# gk (2 halves, 2 teams) int slot of the goalkeeper (rule: max mean |x - centre|, per half);
+# P (N,46,2) float32 meters, NaN = untracked; V (N,46) m/s; T (46,) int8 team per slot;
+# B (N,2) ball xy meters, NaN when missing; BS (N,) ball 's' channel (unexplained, kept separate);
+# gk (2 halves, 2 teams) int slot of the goalkeeper (rule: max mean |x - center|, per half);
 # graded (N,) bool; half (N,) int8 with 0 outside the halves, 1 / 2 inside.
 
 
@@ -129,7 +129,7 @@ def half_array(n=config.N_VIDEO_FRAMES):
 
 
 def goalkeeper_slots(P, T, half):
-    """(2 halves, 2 teams) slot index with max mean |x - centre| inside that half.
+    """(2 halves, 2 teams) slot index with max mean |x - center| inside that half.
 
     Only slots tracked in at least a quarter of the half's frames compete: a slot that appears for
     a few seconds near a goal (e.g. a duplicate) must not win.
@@ -199,7 +199,7 @@ def load_tags():
 # ---------------------------------------------------------------- Broadcast alignment
 
 def _cloud_score(a, c):
-    """Median nearest-neighbour distance (m) between two player clouds, NaN rows ignored."""
+    """Median nearest-neighbor distance (m) between two player clouds, NaN rows ignored."""
     a = a[~np.isnan(a[:, 0])]
     c = c[~np.isnan(c[:, 0])]
     if len(a) < 5 or len(c) < 8:
@@ -211,7 +211,7 @@ def _coarse_lag(Pt, Pb, tac_block, bc_seg, n_samples=60, step=25):
     """Lag k (tactical = broadcast + k) to within ~1 s: cloud score at samples of the broadcast stretch.
 
     For each candidate k (every `step` frames) the score is the median over the samples that land
-    inside the tactical half of the nearest-neighbour distance between the two player clouds; the
+    inside the tactical half of the nearest-neighbor distance between the two player clouds; the
     right lag scores far below the others.
     """
     samples = np.linspace(bc_seg[0], bc_seg[1], n_samples).astype(int)
@@ -235,13 +235,13 @@ def _refine_lag(Pt, Pb, coarse, bc_seg, tac_block, n_windows=100, radius=60, max
     """Median frame-exact lag over player-cloud matches at windows spread across the segment.
 
     Returns (lag, n_matched, n_windows). A window matches when its best 3-frame mean
-    nearest-neighbour distance is below `max_score` metres.
+    nearest-neighbor distance is below `max_score` meters.
     """
     lo, hi = max(bc_seg[0], tac_block[0] - coarse), min(bc_seg[1], tac_block[1] - coarse)
-    centres = np.linspace(lo + 500, hi - 500, n_windows).astype(int)
+    centers = np.linspace(lo + 500, hi - 500, n_windows).astype(int)
     ks = np.arange(coarse - radius, coarse + radius + 1)
     found = []
-    for bf in centres:
+    for bf in centers:
         sc = np.full(len(ks), np.nan)
         for j, k in enumerate(ks):
             v = [_cloud_score(Pb[bf + o], Pt[bf + o + k]) for o in (0, 6, 12)

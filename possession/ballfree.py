@@ -3,7 +3,7 @@
 Only ball-independent columns of :mod:`possession.features` are used (team centroid, spread, bounding
 box, defensive line, goalkeeper, speed, pressing), so the model is unaffected by ball gaps and by the
 vendor ball-channel leaks (FINDINGS S05). Features are sampled at 5 Hz, windowed per half (1 s, 3 s
-and 8 s centred means plus a +-3 s trend), and assembled team-symmetrically: the "own" team is the
+and 8 s centered means plus a +-3 s trend), and assembled team-symmetrically: the "own" team is the
 one whose probability is asked for, so swapping home/away negates differences and flips the label.
 Training uses both orientations and prediction averages them, which makes ``P(H) + P(A) = 1`` exact.
 
@@ -31,9 +31,9 @@ SEED = 0
 FPS = 25
 STRIDE = 5                      # 5 Hz sampling
 HZ = FPS // STRIDE
-WINDOWS_S = (1, 3, 8)           # centred mean windows, seconds
+WINDOWS_S = (1, 3, 8)           # centered mean windows, seconds
 TREND_S = 3                     # trend = mean(next 3 s) - mean(previous 3 s)
-PITCH = (105.0, 68.0)           # externals are metre-scaled to ~105 x 68
+PITCH = (105.0, 68.0)           # externals are meter-scaled to ~105 x 68
 
 # ball-free per-team columns of features.features(); {t} is home/away
 TEAM_COLS = ("tracked_count", "centroid_attack_x_m", "centroid_y_m", "spread_x_m", "spread_y_m",
@@ -72,7 +72,7 @@ def assemble(base, swap):
 
 
 def _window(df, half):
-    """Centred rolling means and +-TREND_S trend per half, on a 5 Hz frame."""
+    """Centered rolling means and +-TREND_S trend per half, on a 5 Hz frame."""
     parts = []
     for h in np.unique(half[half > 0]):
         sub = df[half == h]

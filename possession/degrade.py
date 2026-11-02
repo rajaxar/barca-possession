@@ -9,7 +9,7 @@ looks like the BAR-ATH tactical ATD to a possession model, with ``ref`` and ``ru
    ball through every D block and teleports it at the restart, Metrica blanks it, and both are label
    leaks. Each such run is rebuilt from a donor: the ball's velocity relative to the players'
    centroid, copied from random alive stretches of the same half, integrated from the last observed
-   ball and linearly bridged onto the next one; a speed-capped follower then pulls it towards the
+   ball and linearly bridged onto the next one; a speed-capped follower then pulls it toward the
    nearest player, so it sits at players' feet like an alive ball. No frozen ball, NaN or teleport
    marks a D frame. A bounded carry-like wander (S17, ``wobble_*``) adds independent motion, because
    on the ATD a stopped ball is nudged around rather than glued to a walker's foot; its amplitude
@@ -19,7 +19,7 @@ looks like the BAR-ATH tactical ATD to a possession model, with ``ref`` and ``ru
    track, applied within each half and within present stretches only — never across NaN gaps or half
    boundaries. The ATD ball and players carry this filter (E18), and it is what kills kinematic
    touch detection on the dev set. Smoothing runs before dropout/re-slotting, like a vendor filter
-   over continuous tracking; the dropout gap pattern is drawn afterwards and is label-independent.
+   over continuous tracking; the dropout gap pattern is drawn afterward and is label-independent.
 2. **Ball noise**: a smooth AR(1) offset (decouples Metrica's player-snapped ball from the
    possessor's feet), white jitter at the ATD's mm scale, and short false detections (frame-to-frame
    jumps > 40 m/s).
@@ -71,7 +71,7 @@ ATD_SEG_Q = (8, 42, 65, 92, 140, 194, 244, 317, 427, 618, 873, 1192, 1582, 2140,
              5443, 6819, 9459, 30811)
 
 PARAMS = dict(
-    # leak scrub: pull of the rebuilt ball towards the nearest player (0-1), ramp-in at the run
+    # leak scrub: pull of the rebuilt ball toward the nearest player (0-1), ramp-in at the run
     # edges (frames), and the speed cap of the ball following its target (m/s)
     scrub_pull=0.9, scrub_pull_tau=10, scrub_pull_vmax=20.0,
     # D-ball wobble (S17): independent carry-like wander on rebuilt frames (m/s OU velocity,
@@ -113,7 +113,7 @@ PARAMS = dict(
     # S32 taker/gatherer anchor: the resting D ball must not sit isolated from every player
     # (Q13: the bare spot ball put v>0 ~2x too far from players -> nearest-player AUC .80 vs
     # ATD .60-.66, median 5.3 m vs 2.2 m). During the stationary part of a visible D run the
-    # ball's wobble centre is pulled to within ``taker_r`` m of the nearest non-keeper player
+    # ball's wobble center is pulled to within ``taker_r`` m of the nearest non-keeper player
     # (a gatherer/taker), ramping in over ``taker_approach_s`` s and fading out over the
     # restart glide so the ball still meets the observed alive track. Keeper slots are excluded
     # (a keeper hold is live play, E38), and the 2 m keeper exclusion still runs last.
@@ -274,7 +274,7 @@ def scrub_ball(B, P, half, invalid, rng, pull=0.0, pull_tau=10, pull_vmax=30.0,
                     err = path[-1] - rel[a + e]
                     path -= err * (np.arange(1, need + 1) / need)[:, None]
                 path = path[:L]
-            else:  # half starts unobserved: integrate backwards from the first observed ball
+            else:  # half starts unobserved: integrate backward from the first observed ball
                 path = rel[a + e] - np.cumsum(dv[::-1], axis=0)[::-1][:L]
             x = path + C[a + s:a + e]
             if pull > 0:  # alive balls sit at players' feet: follow the nearest player, speed-capped

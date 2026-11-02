@@ -15,7 +15,7 @@ class Structure(unittest.TestCase):
         cls.m = data.load_match()
         cls.s = structure.structure(cls.m)
 
-    def test_halves_match_organiser(self):
+    def test_halves_match_organizer(self):
         sys.path.insert(0, config.repo_dir())
         sys.path.insert(0, os.path.join(config.repo_dir(), "starter"))
         import games
@@ -42,11 +42,11 @@ class Structure(unittest.TestCase):
             self.assertTrue(ko.loc[h, "start_frame"] <= f < ko.loc[h, "end_frame"])
 
     def test_kickoff_formation(self):
-        """Check only: at the published kickoff players sit on their own side and the ball is near the centre spot."""
+        """Check only: at the published kickoff players sit on their own side and the ball is near the center spot."""
         for h, f in structure.KICKOFFS.items():
             r = structure.kickoff_formation(self.m, f)
             self.assertGreater(r["own_half_frac"], 0.85)
-            self.assertLess(r["ball_to_centre_m"], 10)
+            self.assertLess(r["ball_to_center_m"], 10)
             self.assertGreaterEqual(r["n_tracked"], 20)
 
 

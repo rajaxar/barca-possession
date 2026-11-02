@@ -76,7 +76,7 @@ THE PRESENT-BALL PROXY (``present_ball``, E42)
 A frame is present-ball proxy-``D`` iff
 
     the ball is tracked on the frame
-    AND its speed (0.5 s baseline displacement, centred) is <= ``BALL_STILL_V`` (1.0 m/s)
+    AND its speed (0.5 s baseline displacement, centered) is <= ``BALL_STILL_V`` (1.0 m/s)
         for a run of at least ``MIN_HOLD_S`` (1.0 s)
     AND mean tracked-player speed on the frame is below ``STILL_V`` (1.5 m/s)
     AND the frame is not goalkeeper-in-possession (E38 carry branch, on by default)
@@ -107,10 +107,10 @@ Why each term:
 * **E38 exclusion** -- a keeper carrying or holding the ball is live play and is exactly the shape
   that satisfies "ball static/near-static near a player"; it must never become present-ball ``D``.
   The exclusion is imported, not reimplemented; ``info`` records how many candidate frames it vetoed.
-* **restart context** -- per run, not a gate: distance to the nearest painted line, to the centre
+* **restart context** -- per run, not a gate: distance to the nearest painted line, to the center
   spot and to either penalty mark, whether the ball is inside a goal area, and the own-half share
   of tracked outfield players (S09's kickoff-formation statistic). ``placed`` runs carry the share
-  that are within 2 m of a line, within 9.15 m of the centre spot, in a goal area or on a penalty
+  that are within 2 m of a line, within 9.15 m of the center spot, in a goal area or on a penalty
   mark. Context is reported because it is what distinguishes a goal-kick placement from a ball that
   merely came to rest in open play; it is not used to widen the mask, because a false D costs a
   possession twice and context alone is cheap to satisfy.
@@ -206,8 +206,8 @@ BALL_MED_F = 5       # median half-width for the per-frame ball speed (0.2 s)
 BALL_BASE_S = 0.5    # baseline displacement used as the robust ball speed (E18's smoothing scale)
 NEAR_PLAYER_M = 1.5  # ball at someone's feet: E02/I01 proximity radius (E38 use 2 m for a keeper)
 ROLL_V = 3.0         # slowest rolling/carried mode ends here (E38's V_BALL, a brisk walk with the ball)
-LINE_M = 2.0         # a restart ball placed at a line: taker and ball are within a metre or two
-CENTRE_M = 9.15      # centre circle radius (Laws); a kickoff ball is on/near the spot
+LINE_M = 2.0         # a restart ball placed at a line: taker and ball are within a meter or two
+CENTER_M = 9.15      # center circle radius (Laws); a kickoff ball is on/near the spot
 SPOT_M = 1.5         # penalty mark is a painted spot; the ball sits on it
 GOAL_AREA_M = 5.5    # 6-yard box depth (Laws); goal kicks are placed inside it
 
@@ -470,7 +470,7 @@ d_proxy = proxy
 
 
 def _robust_ball_speed(B, base_s=BALL_BASE_S):
-    """(N,) ball speed in m/s from a centred baseline displacement; NaN when the ball is missing.
+    """(N,) ball speed in m/s from a centered baseline displacement; NaN when the ball is missing.
 
     A per-frame difference is dominated by the ATD's 0.3 s smoothing (E18) and by the tracker
     dropping the ball for one frame; a 0.5 s baseline is the scale at which "at rest" and "rolling"
@@ -495,7 +495,7 @@ def _robust_ball_speed(B, base_s=BALL_BASE_S):
 
 
 def _roll_median(x, w):
-    """Centred rolling nanmedian, edges padded by the edge value (as gk_possession does)."""
+    """Centered rolling nanmedian, edges padded by the edge value (as gk_possession does)."""
     x = np.asarray(x, float)
     k = max(1, int(w)) // 2
     pad = np.pad(x, k, mode="edge")
@@ -506,7 +506,7 @@ def _roll_median(x, w):
 
 
 def nearest_player_m(match, chunk=1 << 14):
-    """(N,) distance from the ball to the nearest tracked player in metres; NaN without a ball.
+    """(N,) distance from the ball to the nearest tracked player in meters; NaN without a ball.
 
     Chunked so the (N, 46, 2) difference never materialises for the whole match at float64.
     """
@@ -525,23 +525,23 @@ def nearest_player_m(match, chunk=1 << 14):
 
 
 def pitch_context(match, st):
-    """Label-free restart geometry per frame: line, centre spot, penalty mark, goal area, formation.
+    """Label-free restart geometry per frame: line, center spot, penalty mark, goal area, formation.
 
     Returns a dict of (N,) arrays:
       ``line_m``       distance to the nearest painted line (touchline or goal line);
-      ``centre_m``     distance to the centre spot;
+      ``center_m``     distance to the center spot;
       ``spot_m``       distance to the nearer penalty mark;
       ``goal_area``    bool, ball inside either 6-yard box;
       ``own_half``     share of tracked outfield players in their own half (S09's kickoff statistic).
 
-    Nothing here is fitted; the distances are the Laws' marks (9.15 m centre circle, 11 m penalty
+    Nothing here is fitted; the distances are the Laws' marks (9.15 m center circle, 11 m penalty
     spot, 5.5 m goal area) and the lines of the 105.3 x 68 pitch.
     """
     B = np.asarray(match.B, float)
     n = len(B)
     x, y = B[:, 0], B[:, 1]
     line_m = np.minimum.reduce([np.abs(x), np.abs(x - PITCH_L), np.abs(y), np.abs(y - PITCH_W)])
-    centre_m = np.hypot(x - PITCH_L / 2, y - PITCH_W / 2)
+    center_m = np.hypot(x - PITCH_L / 2, y - PITCH_W / 2)
     spot_m = np.minimum(np.hypot(x - 11.0, y - PITCH_W / 2),
                         np.hypot(x - (PITCH_L - 11.0), y - PITCH_W / 2))
     goal_area = (((x <= GOAL_AREA_M) | (x >= PITCH_L - GOAL_AREA_M))
@@ -564,7 +564,7 @@ def pitch_context(match, st):
             tot += np.sum(np.isfinite(xx), axis=1)
         with np.errstate(all="ignore"):
             own[sel] = cnt / np.maximum(1, tot)
-    return dict(line_m=line_m, centre_m=centre_m, spot_m=spot_m, goal_area=goal_area,
+    return dict(line_m=line_m, center_m=center_m, spot_m=spot_m, goal_area=goal_area,
                 own_half=own)
 
 
@@ -588,18 +588,18 @@ def _run_meta(a, b, vball, speed, near_m, ctx, p):
     med_near = float(np.nanmedian(near)) if np.isfinite(near).any() else float("nan")
     share_near = float(np.nanmean(near <= p["near_player_m"])) if np.isfinite(near).any() else 0.0
     line_m = float(np.nanmedian(ctx["line_m"][sl]))
-    centre_m = float(np.nanmedian(ctx["centre_m"][sl]))
+    center_m = float(np.nanmedian(ctx["center_m"][sl]))
     spot_m = float(np.nanmedian(ctx["spot_m"][sl]))
     goal_area = bool(np.nanmean(ctx["goal_area"][sl]) > 0.5)
     own_half = float(np.nanmedian(ctx["own_half"][sl]))
-    placed_ctx = bool(line_m <= LINE_M or centre_m <= CENTRE_M or spot_m <= SPOT_M or goal_area)
+    placed_ctx = bool(line_m <= LINE_M or center_m <= CENTER_M or spot_m <= SPOT_M or goal_area)
     return dict(
         start=int(a), end=int(b), frames=int(b - a), seconds=float((b - a) / FPS),
         mean_speed=float(np.nanmean(speed[sl])) if np.isfinite(speed[sl]).any() else float("nan"),
         ball_speed_med=float(np.nanmedian(vball[sl])) if np.isfinite(vball[sl]).any() else float("nan"),
         nearest_player_m=med_near, near_player_share=share_near,
         kind="held" if share_near > 0.5 else "placed",
-        context=dict(line_m=line_m, centre_m=centre_m, spot_m=spot_m,
+        context=dict(line_m=line_m, center_m=center_m, spot_m=spot_m,
                      goal_area=goal_area, own_half=own_half),
         placed=placed_ctx)
 
@@ -713,7 +713,7 @@ def both(match, st=None, params=None, present_params=None):
     """The two targets as one mask: union of the missing-ball and present-ball proxies.
 
     Returns a :class:`DProxy`-shaped object whose ``info["kind"]`` is ``"both"``, so the same
-    :func:`adoption_report` call works. ``runs`` are the union's maximal runs re-labelled with
+    :func:`adoption_report` call works. ``runs`` are the union's maximal runs re-labeled with
     ``source`` = "missing" | "present" | "mixed"; ``missing_runs`` and ``speed`` come from the
     missing-ball proxy, and ``info`` carries both children's summaries.
     """

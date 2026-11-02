@@ -23,7 +23,7 @@ Maps each checklist item in [WHAT_WE_TRIED.md](WHAT_WE_TRIED.md) to our internal
 | Long-block splitting | E72, E74, D-020 | research/E72_split_d_blocks.md, research/E74_gap_composition.md |
 | Restart team by type | E29, I03 | research/E29_restart_team.md, research/I03_football_gaps.md |
 | Moving players, missing ball | E48 | research/E48_moving_stoppages.md |
-| Look-live-but-dead catalogue | E39 | research/E39_confounds.md |
+| Look-live-but-dead catalog | E39 | research/E39_confounds.md |
 | Ship the two add-ons (in progress) | E66 | work/cards/E66-ship-grown-present-d.md |
 | Gap-edge shape (in progress) | E80 | work/cards/E80-gap-edge-shape.md |
 | Gate false alarms (planned) | E62 | work/cards/E62-gate-false-alarm-live-certain.md |
@@ -68,7 +68,7 @@ Maps each checklist item in [WHAT_WE_TRIED.md](WHAT_WE_TRIED.md) to our internal
 
 | Item | Ids | Source |
 |---|---|---|
-| Dataset search, loading, licences | R02, S05, S16, R10, D06 | research/R02_external_datasets.md, research/S05_external_manifest.md, research/R10_licences.md, work/DECISIONS.md D-012 |
+| Dataset search, loading, licenses | R02, S05, S16, R10, D06 | research/R02_external_datasets.md, research/S05_external_manifest.md, research/R10_licenses.md, work/DECISIONS.md D-012 |
 | Matching answer definitions | R01, R09, S11, Q10 | research/R01_metrica_semantics.md, research/R09_idsse_semantics.md, research/S11_metrica_labels.md, research/Q10_skillcorner_review.md |
 | Degrader and smoothing | S06, S17 | research/S06_degradation_fit.md |
 | Visible-ball setting | S21 | research/S06_degradation_fit.md |

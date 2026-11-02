@@ -8,10 +8,10 @@ SOLUTION_DIR = os.path.dirname(HERE)
 DEFAULT_DATA_DIR = os.path.join(SOLUTION_DIR, "..", "more-than-a-hack-2027", "data")
 DEFAULT_REPO_DIR = os.path.join(SOLUTION_DIR, "..", "more-than-a-hack-2027")
 
-N_VIDEO_FRAMES = 199319  # published by the organisers (games.py); submission length
+N_VIDEO_FRAMES = 199319  # published by the organizers (games.py); submission length
 
 # Candidate file names per asset, in preference order. The tactical video ships as
-# "BAR-ATH_tactical-001.mp4" on some machines; the organiser's games.py expects
+# "BAR-ATH_tactical-001.mp4" on some machines; the organizer's games.py expects
 # "BAR-ATH_tactical.mp4". Both are accepted; files are never renamed.
 ASSET_CANDIDATES = {
     "tactical": {
@@ -35,7 +35,7 @@ def data_dir():
 
 
 def repo_dir():
-    """Organiser repository (validator, scorer). Override with MTAH_REPO_DIR."""
+    """Organizer repository (validator, scorer). Override with MTAH_REPO_DIR."""
     return os.path.abspath(os.environ.get("MTAH_REPO_DIR", DEFAULT_REPO_DIR))
 
 

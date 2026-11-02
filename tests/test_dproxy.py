@@ -348,7 +348,7 @@ class ProtocolDecisions(unittest.TestCase):
 
 
 def _ball_path(xs):
-    """ball_fn for ``_make`` (via keeper_hold): ``xs(f) -> x`` metres on the halfway y line."""
+    """ball_fn for ``_make`` (via keeper_hold): ``xs(f) -> x`` meters on the halfway y line."""
     return lambda f: (xs(f), PITCH_W / 2)
 
 

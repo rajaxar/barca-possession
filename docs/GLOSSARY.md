@@ -1,20 +1,20 @@
 # Glossary
 
-**Possession.** An unbroken stretch of one team having the ball. A dead-ball stretch ends it. The same team having the ball again afterwards is a new possession.
+**Possession.** An unbroken stretch of one team having the ball. A dead-ball stretch ends it. The same team having the ball again afterward is a new possession.
 
 **Owner.** The team that last touched the ball in play. It stays with that team through passes in the air and scrambles until the other team gains control.
 
 **Hand-over.** The moment the owner changes from one team to the other.
 
-**Dead ball, stoppage.** Play is stopped: ball out for a throw-in or corner, a foul, a goal, an injury, a cooling break. Labelled `D`. We are not asked who owns a dead ball.
+**Dead ball, stoppage.** Play is stopped: ball out for a throw-in or corner, a foul, a goal, an injury, a cooling break. Labeled `D`. We are not asked who owns a dead ball.
 
 **The score (spellF1).** Our predicted possessions are matched one to one with the true ones by how much they overlap in time. The F-score of that matching is averaged over overlaps of 30% to 70%. A fragmented possession loses on both sides. Differences below about 0.04 on the full match are noise.
 
-**Frame-level score (macroF1).** The usual score over every single frame, averaged over H, A and D. The organisers rank on spellF1, not this.
+**Frame-level score (macroF1).** The usual score over every single frame, averaged over H, A and D. The organizers rank on spellF1, not this.
 
-**Organisers' baselines.** Take the player nearest the ball and vote over a window. Four versions: no window, 1 second, 2 seconds, 5 seconds. "The 2-second baseline" is the one we compare against most.
+**Organizers' baselines.** Take the player nearest the ball and vote over a window. Four versions: no window, 1 second, 2 seconds, 5 seconds. "The 2-second baseline" is the one we compare against most.
 
-**Baseline+.** Our first entry. Nearest player within 2.5 metres owns the ball, otherwise the last owner keeps it. Short flickers are held back and ball-out-of-play is dead.
+**Baseline+.** Our first entry. Nearest player within 2.5 meters owns the ball, otherwise the last owner keeps it. Short flickers are held back and ball-out-of-play is dead.
 
 **Shipped entry.** The file we would submit now: Baseline+, then the stoppage rule, then the in-gap decoder.
 

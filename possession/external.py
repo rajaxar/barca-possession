@@ -1,7 +1,7 @@
 """External development games in the same array layout as :mod:`possession.data`.
 
 ``load_game(id)`` returns an :class:`possession.evaluate.Game`; ``list_games()`` discovers the
-available IDs and ``load_games(ids)`` streams them one at a time. Coordinates are metres on a
+available IDs and ``load_games(ids)`` streams them one at a time. Coordinates are meters on a
 105 x 68 (or the source's stated) pitch, with the origin at the top left, and all arrays are at
 25 Hz. No competition match data or public GT is read here.
 
@@ -113,7 +113,7 @@ def _cached(key, paths, build):
 
 
 def _goalkeepers(P, T, half, pitch_length):
-    """The S03 goalkeeper rule, generalised to arbitrary half boundaries and pitch length."""
+    """The S03 goalkeeper rule, generalized to arbitrary half boundaries and pitch length."""
     out = np.zeros((2, 2), np.int64)
     for h in (1, 2):
         idx = np.flatnonzero(half == h)
@@ -382,10 +382,10 @@ def _interp_frames(values, ok, n_out, step):
 def _skillcorner_ref(P, B, group, half, tracked, pitch):
     """Derive H/A/D/X at 10 Hz from SkillCorner's per-frame possession group.
 
-    SkillCorner's ``group`` is null when **no team is in control**. That is not the organiser's
+    SkillCorner's ``group`` is null when **no team is in control**. That is not the organizer's
     D: a null run can be the flight of a pass that is received by the same team, and when it does
     end in a stoppage it often starts at the last touch before the ball leaves the pitch (measured
-    here: median 1.4 s before the line crossing), while the organiser's D starts at the line
+    here: median 1.4 s before the line crossing), while the organizer's D starts at the line
     crossing / whistle (R09). The mapping is therefore explicit:
 
     1. ``X`` where no player is tracked (broadcast gap) and in the leading/trailing null run of
@@ -484,7 +484,7 @@ def _load_skillcorner(game_id):
         T = np.array([0 if p["team_id"] == home_id else 1 for p in players], np.int8)[present]
         player_ids = np.array([p["id"] for p in players])[present]
         offset = np.array([pitch_l / 2, pitch_w / 2], np.float32)
-        # Derived labels at the source rate, then nearest-neighbour resampled (never interpolated).
+        # Derived labels at the source rate, then nearest-neighbor resampled (never interpolated).
         raw10 = np.where(tracked, np.where(group == 0, "D", np.where(group == 1, "H", "A")),
                          "X").astype("<U1")
         ref10 = _skillcorner_ref(P, B, group, period, tracked, (pitch_l, pitch_w))
@@ -558,7 +558,7 @@ def load_game(game_id):
 
 
 def pitch(game):
-    """(length, width) in metres of a game ID or ``evaluate.Game``, for ``features(..., pitch=...)``."""
+    """(length, width) in meters of a game ID or ``evaluate.Game``, for ``features(..., pitch=...)``."""
     game_id = game if isinstance(game, str) else game.name
     dataset, _, source_id = game_id.partition(":")
     if dataset == "idsse":

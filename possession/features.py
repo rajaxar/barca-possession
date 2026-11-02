@@ -1,7 +1,7 @@
 """Shared, label-free, permutation-invariant per-frame tracking features.
 
 The input is the common ``possession.data.Match`` layout (or any object with the
-same attributes). Coordinates are metres, team 0/1 is home/away, and rows are
+same attributes). Coordinates are meters, team 0/1 is home/away, and rows are
 video frames. No player-slot identity is used except the goalkeeper role already
 identified by the loader. Ball features are missing, never zero-filled, when the
 ball is missing.
@@ -22,7 +22,7 @@ import pandas as pd
 from . import config
 
 FEATURE_VERSION = "v2"  # v2 (E16): jump masking, NaN attack sign off-half, bbox/GK guards, hashed cache key
-NEIGHBOURS = 3
+NEIGHBORS = 3
 RADII_M = (1, 2, 4, 8)
 MAX_TIME_TO_BALL_S = 60.0
 STRAIN_DISTANCE_FLOOR_M = 0.5
@@ -48,7 +48,7 @@ ATTACKER_TAG_CODES = frozenset({
 def _column_names():
     names = ["ball_present"]
     for team in ("home", "away"):
-        for rank in range(1, NEIGHBOURS + 1):
+        for rank in range(1, NEIGHBORS + 1):
             for quantity in ("dist_m", "rel_speed_mps", "closing_mps"):
                 names.append("{}_ball_near{}_{}".format(team, rank, quantity))
     for team in ("home", "away"):
@@ -207,7 +207,7 @@ def _validate_match(match, fps, pitch):
 
 
 def camera_look_at_x(path, n_frames=None, image_size=(1920, 1080), pitch_length=105.3):
-    """Unproject image centre to pitch x (m) from an organiser homography CSV."""
+    """Unproject image center to pitch x (m) from an organizer homography CSV."""
     table = pd.read_csv(path)
     columns = ["h{}{}".format(r, c) for r in range(3) for c in range(3)]
     required = {"frame", "valid", *columns}
@@ -219,10 +219,10 @@ def camera_look_at_x(path, n_frames=None, image_size=(1920, 1080), pitch_length=
         raise ValueError("homography frame column must be contiguous and zero-based")
     matrices = table[columns].to_numpy(dtype=np.float64).reshape(-1, 3, 3)
     valid = table["valid"].to_numpy(dtype=bool) & np.isfinite(matrices).all(axis=(1, 2))
-    centre = np.array([image_size[0] / 2, image_size[1] / 2, 1.0])
+    center = np.array([image_size[0] / 2, image_size[1] / 2, 1.0])
     result = np.full((len(table), 2), np.nan, dtype=np.float64)
     if valid.any():
-        rhs = np.broadcast_to(centre, (valid.sum(), 3))[..., None]
+        rhs = np.broadcast_to(center, (valid.sum(), 3))[..., None]
         solved = np.linalg.solve(matrices[valid], rhs)[..., 0]
         good = np.isfinite(solved).all(axis=1) & (np.abs(solved[:, 2]) > 1e-12)
         selected = result[valid]
@@ -284,16 +284,16 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
     Parameters
     ----------
     match : possession.data.Match or compatible object
-        Tracking arrays in metres. ``V`` is player speed in m/s; velocities used
+        Tracking arrays in meters. ``V`` is player speed in m/s; velocities used
         for relational features are estimated from xy so they also work for
         external formats without a speed channel.
     fps : float
         Tracking sampling rate. Resample external games to their native/common
         timeline before calling; no hidden resampling is done here.
     pitch : (length, width)
-        Pitch dimensions in metres, used for canonical x and out-of-pitch flags.
+        Pitch dimensions in meters, used for canonical x and out-of-pitch flags.
     camera_x : optional (frames,) array
-        Camera look-at x in metres. Use :func:`camera_look_at_x` for BAR-ATH.
+        Camera look-at x in meters. Use :func:`camera_look_at_x` for BAR-ATH.
         NaN throughout when this channel is unavailable.
     tags : optional DataFrame
         ``load_tags()``-format Smart Tagging intervals. ``None`` means source
@@ -350,12 +350,12 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
         positions = p[:, indices, :]
         velocities = player_v[:, indices, :]
         distance = np.linalg.norm(positions - b[:, None, :], axis=2)
-        order = np.argsort(np.where(np.isfinite(distance), distance, np.inf), axis=1)[:, :NEIGHBOURS]
+        order = np.argsort(np.where(np.isfinite(distance), distance, np.inf), axis=1)[:, :NEIGHBORS]
         relative_v = velocities - ball_v[:, None, :]
         relative_speed = np.linalg.norm(relative_v, axis=2)
         to_ball = b[:, None, :] - positions
         closing = np.sum(relative_v * to_ball, axis=2) / np.maximum(distance, 1e-6)
-        for j in range(NEIGHBOURS):
+        for j in range(NEIGHBORS):
             if j >= order.shape[1]:  # Defensive support for tiny synthetic/external teams.
                 continue
             selected = order[:, j]
@@ -437,9 +437,9 @@ def features(match, *, fps=25.0, pitch=(105.3, 68.0), camera_x=None, tags=None,
         values["{}_mean_speed_delta_mps2".format(prefix)] = _derivative(mean_speed, fps, half)
         to_opponent = centroids[1 - team][:, None, :] - positions
         opponent_distance = np.linalg.norm(to_opponent, axis=2)
-        towards = np.sum(velocities * to_opponent, axis=2) / np.maximum(opponent_distance, 1e-6)
-        towards[opponent_distance <= 1e-6] = np.nan
-        values["{}_pressing_mps".format(prefix)] = _mean(towards)
+        toward = np.sum(velocities * to_opponent, axis=2) / np.maximum(opponent_distance, 1e-6)
+        toward[opponent_distance <= 1e-6] = np.nan
+        values["{}_pressing_mps".format(prefix)] = _mean(toward)
 
     np.divide(
         values["home_bbox_area_m2"], values["away_bbox_area_m2"],

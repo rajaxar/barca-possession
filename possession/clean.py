@@ -25,7 +25,7 @@ one.
 ``info["flags"]`` is a per-frame uint8 bitmask (see ``FLAGS``) that marks where something was
 removed or where the team tracked-player count is still anomalous after cleaning, so a consumer can
 down-weight those frames. All defaults are physical limits (a player cannot exceed ~12 m/s, a kicked
-ball ~40 m/s, two teammates cannot occupy one square metre for a second), not fitted values.
+ball ~40 m/s, two teammates cannot occupy one square meter for a second), not fitted values.
 """
 import numpy as np
 
@@ -93,7 +93,7 @@ def clean_player_jumps(P, half, fps=FPS, params=None):
     bad = np.zeros(P.shape[:2], bool)
     finite = np.isfinite(P[..., 0])
     for gap in range(1, p["gap"] + 1):
-        # Pairs (t, t+gap) with nothing tracked in between: the nearest-neighbour comparison.
+        # Pairs (t, t+gap) with nothing tracked in between: the nearest-neighbor comparison.
         between = np.ones(len(P) - gap, bool)[:, None] & np.ones(P.shape[1], bool)[None]
         for k in range(1, gap):
             between &= ~finite[k:len(P) - gap + k]

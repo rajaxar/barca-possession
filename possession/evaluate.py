@@ -1,10 +1,10 @@
 """Scoring and label-free diagnostics for any (prediction, reference) pair.
 
-The metric is the organiser's `evaluation/possession_metrics.py`, imported (config.repo_dir()), never
+The metric is the organizer's `evaluation/possession_metrics.py`, imported (config.repo_dir()), never
 re-implemented. Everything here only adapts inputs to it: arbitrary games, arbitrary graded runs,
 pooling over games, and CIs.
 
-Labels are accepted as strings (H/A/D/X) or as the organiser's codes (0..3). A *run* is a half-open
+Labels are accepted as strings (H/A/D/X) or as the organizer's codes (0..3). A *run* is a half-open
 [start, stop) frame span that is scored; the metric never matches or counts across runs. External
 games pass their own runs (e.g. the two periods); if omitted they are the non-X spans of the reference.
 Predictions on frames outside the runs are ignored.
@@ -37,7 +37,7 @@ DURATION_BINS_S = (0, 1, 2, 5, 10, 20, 40, np.inf)
 
 
 def to_codes(labels):
-    """Organiser codes (int8) from strings or from codes already."""
+    """Organizer codes (int8) from strings or from codes already."""
     a = np.asarray(labels)
     if a.dtype.kind in "iu":
         if a.size and (a.min() < 0 or a.max() > 3):
@@ -70,8 +70,8 @@ def _pack(items):
 
 
 def score(pred, ref, runs=None, bootstrap_n=0, taus=pm.TAUS):
-    """Organiser `evaluate()` dict for one pair. Keys include spell_f1_mean (ranking), macro_f1,
-    spell_bootstrap_low/high (possession bootstrap, organiser's seed) when bootstrap_n > 0."""
+    """Organizer `evaluate()` dict for one pair. Keys include spell_f1_mean (ranking), macro_f1,
+    spell_bootstrap_low/high (possession bootstrap, organizer's seed) when bootstrap_n > 0."""
     pred, ref = to_codes(pred), to_codes(ref)
     if len(pred) != len(ref):
         raise ValueError("length mismatch: pred {} vs ref {}".format(len(pred), len(ref)))
@@ -209,7 +209,7 @@ def _spell_flags(pred, ref, runs):
 
 def _pooled_f1(tp, n_pred, n_gt):
     """spell_f1_mean from summed counts. tp: (..., n_iou); n_pred, n_gt broadcast against tp[..., 0].
-    As the organiser's bootstrap, fp is clamped at 0 when a resample implies tp > n_pred."""
+    As the organizer's bootstrap, fp is clamped at 0 when a resample implies tp > n_pred."""
     n_pred, n_gt = np.asarray(n_pred)[..., None], np.asarray(n_gt)[..., None]
     fp = np.maximum(0, n_pred - tp)
     den = 2 * tp + fp + (n_gt - tp)

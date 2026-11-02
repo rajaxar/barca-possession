@@ -1,8 +1,8 @@
 # How we work
 
-## Why we practise on other matches
+## Why we practice on other matches
 
-We have the true answers for 5 public minutes of our match, and the rules forbid training or tuning on them. Even if they were allowed, 5 minutes hold 17 real possessions. The organisers show that tuning a one-setting baseline on this sample picks the wrong setting. So every choice is made on other public matches that have answers.
+We have the true answers for 5 public minutes of our match, and the rules forbid training or tuning on them. Even if they were allowed, 5 minutes hold 17 real possessions. The organizers show that tuning a one-setting baseline on this sample picks the wrong setting. So every choice is made on other public matches that have answers.
 
 The main practice set is frozen at 10 matches: 7 from the German league (DFL) and 3 from Metrica. Anything trained is trained with one match held out at a time. A second set of 20 SkillCorner matches is used only for who-has-the-ball questions, never pooled with the 10. Its dead-ball labels are our own derived rule, so it never sets a dead-ball threshold, a stoppage length or a dead share. A dead-ball conclusion must hold on the 10 alone. A who-has-the-ball conclusion must not reverse on the 20.
 
@@ -21,7 +21,7 @@ The lesson: every property of the copied data is now checked against our match s
 
 One setting cannot be measured on our match: how often the ball stays visible during a stoppage. We therefore test every method across a range of that setting and trust only gains that hold across it. The range is estimated from our match without using the answers: between 7% and 23% of stoppages keep the ball visible.
 
-The practice set is about .06 easier than the real match. The organisers' 2-second baseline scores .304 on it and .243 on the real match. We use it to rank methods and never to predict a level. Eight known blind spots are written down with it, such as no cooling breaks or video-review stops in the practice matches.
+The practice set is about .06 easier than the real match. The organizers' 2-second baseline scores .304 on it and .243 on the real match. We use it to rank methods and never to predict a level. Eight known blind spots are written down with it, such as no cooling breaks or video-review stops in the practice matches.
 
 ## How we choose what ships
 
@@ -48,7 +48,7 @@ When we compare two methods, we resample whole matches rather than single posses
 
 ## Rules we hold ourselves to
 
-- No hand labels on this match, no hand-corrected tracking, and no rule tied to a specific frame. Structure the organisers publish (half boundaries, the two kickoffs) is used as a constant with its source cited. Everything else about when things happen is found by code.
+- No hand labels on this match, no hand-corrected tracking, and no rule tied to a specific frame. Structure the organizers publish (half boundaries, the two kickoffs) is used as a constant with its source cited. Everything else about when things happen is found by code.
 - No outside data about this match: no event feeds, no corrected tracking, no possession statistics. Data about other matches is fine, and its source is recorded.
 - No match data sent to outside services or published. Tracking, frames, audio and video stay on local machines, and so does anything drawn from them. Public audio models run locally.
 - Video clips are watched only to understand football. Questions are neutral, answers are in words, and nothing watched becomes a label.

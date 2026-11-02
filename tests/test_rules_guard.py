@@ -126,7 +126,7 @@ class RulesGuard(unittest.TestCase):
             bad += ["{}:{}: {}".format(rel(p), n, v) for n, v in frame_literals(read(p))
                     if (rel(p), v) not in FRAME_REVIEWED]
         self.assertEqual(bad, [], "game-frame literal outside structure.py; cite it and add `# %s` "
-                                  "only if it is organiser-published structure (GUARDRAILS 1.0)" % FRAME_MARK)
+                                  "only if it is organizer-published structure (GUARDRAILS 1.0)" % FRAME_MARK)
 
     def test_no_network_imports(self):
         bad = []

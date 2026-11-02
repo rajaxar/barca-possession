@@ -1,4 +1,4 @@
-"""Shapes, alignment against the organiser's loaders, and Smart Tagging flips."""
+"""Shapes, alignment against the organizer's loaders, and Smart Tagging flips."""
 import os
 import sys
 import time
@@ -32,7 +32,7 @@ class MatchData(unittest.TestCase):
         self.assertEqual(int(m.graded.sum()), 158857)
         self.assertEqual(set(np.unique(m.half)), {0, 1, 2})
 
-    def test_halves_match_organiser(self):
+    def test_halves_match_organizer(self):
         games = _starter()
         self.assertEqual(tuple(games.half_video_blocks("BAR-ATH")), structure.HALF_BLOCKS)
 
@@ -43,7 +43,7 @@ class MatchData(unittest.TestCase):
 
     def test_alignment_against_starter_loader(self):
         _starter()
-        import load_atd  # organiser's loader; its path helpers and frame_id convention
+        import load_atd  # organizer's loader; its path helpers and frame_id convention
         _, raw = load_atd.atd_paths()
         rng = np.random.default_rng(0)
         frames = sorted(int(f) for f in rng.choice(np.where(self.m.graded)[0], 3, replace=False))

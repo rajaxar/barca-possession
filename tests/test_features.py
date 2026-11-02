@@ -128,7 +128,7 @@ class Features(unittest.TestCase):
         with self.assertRaises(ValueError):
             feature_lib.features(match)
 
-    def test_camera_unprojects_image_centre(self):
+    def test_camera_unprojects_image_center(self):
         matrix = np.diag([1920.0, 1080.0, 1.0])
         columns = ["h{}{}".format(r, c) for r in range(3) for c in range(3)]
         table = pd.DataFrame({

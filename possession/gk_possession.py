@@ -7,7 +7,7 @@ state from tracking alone and emits evidence that cancels a stillness-driven D s
 
 Two mechanisms, both conservative by construction:
 
-``carry``  the ball is tracked within ``r`` metres of a *plausible* keeper, the keeper is walking,
+``carry``  the ball is tracked within ``r`` meters of a *plausible* keeper, the keeper is walking,
            and the ball is slow (a seed) or moving with him (extension). Only accepted when
            (a) a whistle did not just sound, (b) the ball was not out of play in the last 3 s,
            (c) the ball was continuously tracked for 3 s before (so this is not a restart after a
