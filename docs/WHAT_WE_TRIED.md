@@ -208,7 +208,8 @@ On the corrected practice data, averaged over the six main cells:
 | Organizers' 2-second baseline | .304 |
 | Baseline+ | .326 |
 | Baseline+ and stoppage rule | .399 |
-| Shipped entry (plus in-gap decoder and the two add-ons) | .404 |
+| Shipped entry before the short-spell floor (gate + in-gap + add-ons) | .404 |
+| Shipped entry, frozen (adds the short-spell floor) | **.4247** |
 
 The shipped entry is +.100 [.088, .113] over the organizers' 2-second baseline. The stoppage rule supplies +.073 of that, the in-gap decoder +.005, and the two add-ons about +.011 on top of the decoder alone. On our match we expect the stoppage rule to add +.06 to +.08 and the rest +.005 to +.012. The practice set is about .06 easier than the real match, so we trust the order of the methods, not the levels.
 
@@ -216,7 +217,7 @@ One add-on tested on that set was dropped: splitting long stoppage blocks, −.0
 
 The biggest weakness is possessions: we catch about 1 in 5 well enough to count. Following the ball more closely did not help. About 13.5% of changes of owner cannot be seen from positions, and our hand-overs often land more than a second from the real one.
 
-On the organizers' 5 public minutes the shipped entry scores .456, against .326 for their 2-second baseline and .424 for their 5-second one. Our frame-level score there is .712 against .581 for their best. It is first on both. That sample holds only 17 real possessions and we report it without acting on it.
+On the organizers' 5 public minutes the shipped entry scores **.4686**, against .326 for their 2-second baseline and .424 for their 5-second one. Our frame-level score there is **.7199** against .581 for their best. It is first on both. That sample holds only 17 real possessions and we report it without acting on it.
 
 ## What we plan to test next
 
