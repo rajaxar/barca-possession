@@ -33,6 +33,16 @@ The match data is gated and is never committed here. Unpack the bundle into the 
     export MTAH_DATA_DIR=/path/to/data          # default: ../more-than-a-hack-2027/data
     export MTAH_REPO_DIR=/path/to/organizer     # default: ../more-than-a-hack-2027 (validator)
 
+The build also **retrains two models on 10 external practice matches** (7 IDSSE + 3 Metrica) on
+every run, so those raw games must be on disk at `../external` — not committed, and not part of the
+organizer bundle:
+
+    export MTAH_EXTERNAL_DIR=/path/to/external        # default: ../external
+    export MTAH_EXTERNAL_CACHE_DIR=/path/to/cache     # default: <external>/cache
+
+Without them `make submission` fails at the model step rather than producing a degraded file. The
+sources and licenses are listed in `docs/REFERENCE.md`.
+
 The tactical video may be named `BAR-ATH_tactical.mp4` or `BAR-ATH_tactical-001.mp4`; both are
 found (see `possession/config.py`).
 
