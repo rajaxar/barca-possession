@@ -11,11 +11,13 @@ in-pitch ball movement (``v_restart`` and ``restart_len``). Published pre-kickof
 by :mod:`possession.structure`; all other ungraded frames remain X. Finally, H/A spells shorter than
 ``m`` frames are absorbed into a neighboring H/A spell, or into D when both neighbors are D.
 
-No public labels are read or fitted. Defaults are football-sensible placeholders until the external
-dev loaders are ready (S05/S06): 2.5 m rejects distant receivers during flight; 8 evidence frames are
-0.32 s at 25 fps; and the 20-frame (0.8 s) merge floor is below R08's 1.0 s hard ceiling. The 0.5 m
-boundary margin, 6-frame out debounce, and 3 m/s for 5 frames restart test reject tracking jitter
-without imposing a minimum stoppage duration or an arbitrary maximum dead time.
+No public labels are read or fitted. The defaults were re-selected on the external practice set (E01
+design; k raised 8 -> 16 by E20 at tier 1, with Q14's caveat that it is regime-dependent): 2.5 m rejects
+distant receivers during flight; 16 evidence frames are 0.64 s at 25 fps; and the 20-frame (0.8 s) merge
+floor is below R08's 1.0 s hard ceiling. The 0.5 m boundary margin, 6-frame out debounce, and the 3 m/s
+sustained-for-10-frames restart test reject tracking jitter without imposing a minimum stoppage duration
+or an arbitrary maximum dead time. On the shipped path this module's merge is effectively a no-op: the
+in-gap decoder re-applies the same 20-frame merge (B14, E83).
 """
 import numpy as np
 
