@@ -307,8 +307,11 @@ def detect(match, st=None, events=None, params=None):
             if k >= 0 and graded[k]:
                 gap_s = (j - i + 1) / FPS
                 ret = np.nan
-                a2, z2 = j + 1, min(j + 1 + int(FPS), n)
-                if z2 > a2 + 2 and present[a2] and present[z2]:
+                # Far end of the <= 1 s return window, clamped to the last frame: when the array
+                # ends 3-25 frames after the run, min(..., n) used to index present[n]. Measuring
+                # over the available tail preserves the "reappears moving fast" test.
+                a2, z2 = j + 1, min(j + 1 + int(FPS), n - 1)
+                if a2 < n and z2 > a2 + 2 and present[a2] and present[z2]:
                     ret = float(np.linalg.norm(B[z2] - B[a2]) / ((z2 - a2) / FPS))
                 ok = (np.isfinite(dmin[k]) and dmin[k] <= p["miss_r"]
                       and gap_s <= p["miss_max_s"]

@@ -185,5 +185,53 @@ class TestInterface(unittest.TestCase):
         self.assertGreater(gp.live.sum(), 0.0)
 
 
+def _st_full():
+    """Structure covering the whole synthetic array (the tail tests run to frame N-1)."""
+    return Structure(halves={1: (50, N)}, kickoffs={1: 50},
+                     attack_dir=np.array([[1, -1], [-1, 1]], np.int8),
+                     forced_dead_mask=np.zeros(N, bool))
+
+
+class TestMissingRunAtArrayEnd(unittest.TestCase):
+    """E07's one-frame overrun: a ball-missing run ending 0..40 frames before the array end.
+
+    The gathered branch measured the return speed at ``present[j + 1 + 25]``; when the array
+    ended 3-25 frames after the run, that index was exactly ``n``.  The present tail is the
+    return, not the episode: it must not be labelled live.
+    """
+
+    GAP = 50  # 2 s, inside the 6 s miss cap
+
+    def _case(self, tail):
+        gap_end = N - 1 - tail
+        gap_start = gap_end - self.GAP + 1
+
+        def ball(f):
+            if f < gap_start:
+                return (5.6, PITCH_W / 2)          # at the home keeper, slow
+            if f <= gap_end:
+                return None                        # the tracker loses it
+            # reappears away from the keeper at 20 m/s: a throw, not a carry
+            return (60.0 + 20.0 * (f - gap_end - 1) / FPS, PITCH_W / 2)
+
+        return _make(ball, half_ranges=((50, N, 1),)), gap_start, gap_end
+
+    def test_no_indexerror_and_tail_not_live(self):
+        for tail in range(41):
+            for include in (False, True):
+                with self.subTest(tail=tail, include_gathered=include):
+                    m, gap_start, gap_end = self._case(tail)
+                    gp = gk.detect(m, _st_full(), events=np.zeros(0),
+                                   params=dict(include_gathered=include))
+                    self.assertEqual(gp.live.shape, (N,))
+                    self.assertTrue(np.all(gp.live[gap_end + 1:] == 0.0))
+                    if include:
+                        # the gap is still accepted: the clamp did not change the semantics
+                        self.assertEqual(gp.info["n_gathered_accepted"], 1)
+                        self.assertTrue(np.all(gp.live[gap_start:gap_end + 1] == 1.0))
+                    else:
+                        self.assertEqual(float(gp.live.sum()), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
