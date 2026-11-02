@@ -1,20 +1,46 @@
 {
   "entries": {
     "all_frames": {
-      "command": "grep -n -m1 '199,319 rows' research/Q26_e66_repro.md",
+      "command": "wc -l < solution/outputs/submission.csv",
       "display": "199,319",
-      "recomputed": false,
-      "source": "research/Q26_e66_repro.md (validator)",
+      "note": "rows including X",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
       "tolerance": 0.0,
       "value": 199319
     },
-    "ball_in_play_min": {
-      "command": "grep -n -m1 'H 51,037' research/Q26_e66_repro.md",
-      "display": "58.3 min",
+    "anchor_recall_clean": {
+      "command": "grep -n -m1 'on dev-v1 vs \\*\\*(\\.45) clean\\*\\*' work/DECISIONS.md",
+      "display": ".45",
       "recomputed": false,
-      "source": "research/Q26_e66_repro.md (validator counts)",
+      "source": "work/DECISIONS.md",
       "tolerance": 0.0,
-      "value": 58.3
+      "value": 0.45
+    },
+    "anchor_recall_knob0": {
+      "command": "grep -n -m1 '\\*\\*(\\.19) \\(knob 0\\) / \\.085 \\(knob 1\\)\\*\\*' work/DECISIONS.md",
+      "display": ".19",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 0.19
+    },
+    "anchor_recall_knob1": {
+      "command": "grep -n -m1 '\\.19 \\(knob 0\\) / (\\.085) \\(knob 1\\)' work/DECISIONS.md",
+      "display": ".085",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 0.085
+    },
+    "ball_in_play_min": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show ball_in_play_min",
+      "display": "57.47 min",
+      "note": "H + A frames at 25 fps",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 57.47
     },
     "ball_px": {
       "command": "grep -n -m1 'ball is (8) to 10 pixels wide' solution/docs/WHAT_WE_TRIED.md",
@@ -58,6 +84,50 @@
       "tolerance": 5e-05,
       "value": 0.0222
     },
+    "contact_s": {
+      "command": "grep -n -m1 '~(0\\.16) s' research/E83_handover_scatter.md",
+      "display": "0.16 s",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.16
+    },
+    "count_a": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show count_a",
+      "display": "35,720",
+      "note": "rows labelled A",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 35720
+    },
+    "count_d": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show count_d",
+      "display": "72,659",
+      "note": "rows labelled D",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 72659
+    },
+    "count_h": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show count_h",
+      "display": "50,478",
+      "note": "rows labelled H",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 50478
+    },
+    "count_x": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show count_x",
+      "display": "40,462",
+      "note": "rows labelled X",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 40462
+    },
     "coupling_high": {
       "command": "grep -n -m1 'cost \u22120\\.002 to \u2212(0\\.011)' solution/docs/WHAT_WE_TRIED.md",
       "display": "\u2212.011",
@@ -83,12 +153,31 @@
       "value": 0.027
     },
     "csv_sha8": {
-      "command": "grep -n -m1 'sha256' research/Q26_e66_repro.md",
-      "display": "8255d2d1\u20265e61",
-      "recomputed": false,
-      "source": "research/Q26_e66_repro.md (Q26 clean-clone build)",
+      "command": "shasum -a 256 solution/outputs/submission.csv",
+      "display": "ee7b5b6b\u202646d8",
+      "note": "head and tail of the sha256 of the frozen file",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
       "tolerance": 0.0,
-      "value": "8255d2d1"
+      "value": "ee7b5b6b"
+    },
+    "d_runs_ge_15s": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show d_runs_ge_15s",
+      "display": "111",
+      "note": "D runs of at least 38 frames (1.52 s)",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 111
+    },
+    "d_stretches": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show d_stretches",
+      "display": "138",
+      "note": "maximal D runs",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 138
     },
     "demo_iou2": {
       "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_iou2",
@@ -204,6 +293,24 @@
       "tolerance": 0.0,
       "value": 0.856
     },
+    "e36_dead_high": {
+      "command": "grep -n -m1 'verified-live share' research/E36_gap_mechanisms.md",
+      "display": "87%",
+      "note": "unresolved share held fixed at 11.4%",
+      "recomputed": false,
+      "source": "research/E36_gap_mechanisms.md (verified-live CI carried onto the dead share)",
+      "tolerance": 0.0,
+      "value": 0.8693
+    },
+    "e36_dead_low": {
+      "command": "grep -n -m1 'verified-live share' research/E36_gap_mechanisms.md",
+      "display": "82%",
+      "note": "unresolved share held fixed at 11.4%",
+      "recomputed": false,
+      "source": "research/E36_gap_mechanisms.md (verified-live CI carried onto the dead share)",
+      "tolerance": 0.0,
+      "value": 0.8206
+    },
     "e36_dead_share": {
       "command": "grep -n -m1 'independent route puts \\*\\*(84\\.5%)' work/FINDINGS.md",
       "display": "84.5%",
@@ -211,6 +318,30 @@
       "source": "work/FINDINGS.md",
       "tolerance": 0.0,
       "value": 0.845
+    },
+    "e36_live_high": {
+      "command": "grep -n -m1 'verified-live share of missing time \\| 4\\.09% \\| \\[2\\.05%, (6\\.92)%\\]' research/E36_gap_mechanisms.md",
+      "display": "6.9%",
+      "recomputed": false,
+      "source": "research/E36_gap_mechanisms.md",
+      "tolerance": 0.0,
+      "value": 0.0692
+    },
+    "e36_live_low": {
+      "command": "grep -n -m1 'verified-live share of missing time \\| 4\\.09% \\| \\[(2\\.05)%, 6\\.92%\\]' research/E36_gap_mechanisms.md",
+      "display": "2.1%",
+      "recomputed": false,
+      "source": "research/E36_gap_mechanisms.md",
+      "tolerance": 0.0,
+      "value": 0.020499999999999997
+    },
+    "e36_unresolved": {
+      "command": "grep -n -m1 'unresolved \\| 42 \\| 7,332 \\| (11\\.4)%' research/E36_gap_mechanisms.md",
+      "display": "11.4%",
+      "recomputed": false,
+      "source": "research/E36_gap_mechanisms.md",
+      "tolerance": 0.0,
+      "value": 0.114
     },
     "eligible_dev": {
       "command": "grep -n -m1 'vs (17)-44%' work/FINDINGS.md",
@@ -255,6 +386,15 @@
       "source": "research/E76_regrid.md",
       "tolerance": 0.0,
       "value": 0.0035
+    },
+    "expected_master": {
+      "command": "grep -n -m1 'master \u2212 ship \u2248 (\\+\\.011)\u2026\\+\\.016' research/Z01_final_report.md",
+      "display": "+.011 to +.016",
+      "note": "reach-scaled, not the dev number",
+      "recomputed": false,
+      "source": "research/Z01_final_report.md",
+      "tolerance": 0.0,
+      "value": 0.0135
     },
     "expected_postprocess": {
       "command": "grep -n -m1 'expected (\\+\\.006)\\.\\.\\+\\.009' work/FINDINGS.md",
@@ -321,6 +461,30 @@
       "tolerance": 0.0,
       "value": 25
     },
+    "gap_edge_sd_s": {
+      "command": "grep -n -m1 'at quarter strength \\(sd ~(1) s\\)' work/DECISIONS.md",
+      "display": "1 s",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 1.0
+    },
+    "gap_edge_spread_max": {
+      "command": "grep -n -m1 'is 2-(4)x shipped' work/DECISIONS.md",
+      "display": "4\u00d7",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 4
+    },
+    "gap_edge_spread_min": {
+      "command": "grep -n -m1 'is (2)-4x shipped' work/DECISIONS.md",
+      "display": "2\u00d7",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 2
+    },
     "gate_dev": {
       "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
       "display": ".3987",
@@ -355,13 +519,39 @@
       "tolerance": 0.0,
       "value": 0.93
     },
-    "graded_frames": {
-      "command": "grep -n -m1 'H 51,037' research/Q26_e66_repro.md",
-      "display": "158,857",
+    "geom_nearest_dev": {
+      "command": "grep -n -m1 'median nearest (2\\.29) vs 2\\.35' research/E78_geometry_harshness.md",
+      "display": "2.29 m",
       "recomputed": false,
-      "source": "research/Q26_e66_repro.md (validator)",
+      "source": "research/E78_geometry_harshness.md",
+      "tolerance": 0.0,
+      "value": 2.29
+    },
+    "geom_nearest_match": {
+      "command": "grep -n -m1 'median nearest 2\\.29 vs (2\\.35)' research/E78_geometry_harshness.md",
+      "display": "2.35 m",
+      "recomputed": false,
+      "source": "research/E78_geometry_harshness.md",
+      "tolerance": 0.0,
+      "value": 2.35
+    },
+    "graded_frames": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show graded_frames",
+      "display": "158,857",
+      "note": "H + A + D",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
       "tolerance": 0.0,
       "value": 158857
+    },
+    "graded_min": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show graded_min",
+      "display": "105.9 min",
+      "note": "graded frames at 25 fps",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
+      "tolerance": 0.0,
+      "value": 105.9
     },
     "grown_ci_high": {
       "command": "grep -n -m1 'R25 cap30 \\| \\+\\.0055 \\[\\+\\.0159\\] \\| \\[\\.0044,(\\.0066)\\]' research/E76_regrid.md",
@@ -386,6 +576,62 @@
       "source": "research/E76_regrid.md",
       "tolerance": 0.0,
       "value": 0.0055
+    },
+    "handover_cue_share": {
+      "command": "grep -n -m1 'a1\\+a2 are (93\\.4)% and \\+\\.0796' research/E83_handover_scatter.md",
+      "display": "93.4%",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.934
+    },
+    "handover_early": {
+      "command": "grep -n -m1 '\\| early > 1 s .*?\\| (31\\.2)% of matched' research/E83_handover_scatter.md",
+      "display": "31.2%",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.312
+    },
+    "handover_late": {
+      "command": "grep -n -m1 '\\| late > 1 s .*?\\| (15\\.7)% of matched' research/E83_handover_scatter.md",
+      "display": "15.7%",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.157
+    },
+    "handover_oracle": {
+      "command": "grep -n -m1 'a1\\+a2 are 93\\.4% and (\\+\\.0796)\\.' research/E83_handover_scatter.md",
+      "display": "+.0796",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.0796
+    },
+    "handover_tail": {
+      "command": "grep -n -m1 '\\((46\\.9)% of matched\\)' research/E83_handover_scatter.md",
+      "display": "46.9%",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.469
+    },
+    "handover_tail_high": {
+      "command": "grep -n -m1 'matched, .*?\\| \\*\\*12,554 \\(46\\.9% of matched\\)\\*\\* \\| \\[43\\.9, (49\\.5)\\]' research/E83_handover_scatter.md",
+      "display": "49.5%",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.495
+    },
+    "handover_tail_low": {
+      "command": "grep -n -m1 'matched, .*?\\| \\*\\*12,554 \\(46\\.9% of matched\\)\\*\\* \\| \\[(43\\.9), 49\\.5\\]' research/E83_handover_scatter.md",
+      "display": "43.9%",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.439
     },
     "hmm_ci_high": {
       "command": "grep -n -m1 '\\+\\.0084 \\[\u2212\\.0025,(\\+\\.0180)\\]' work/FINDINGS.md",
@@ -476,6 +722,98 @@
       "tolerance": 0.0,
       "value": 0.75
     },
+    "master_dev": {
+      "command": "grep -n -m1 'master \\*\\*(\\.4247)\\*\\*' research/B01_result.md",
+      "display": ".4247",
+      "note": "the frozen D-028 stack, one run of the whole pipeline",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 0.4247
+    },
+    "master_neg": {
+      "command": "grep -n -m1 'master \u2212 ship' research/B01_result.md",
+      "display": "0/10",
+      "note": "games in which master loses to ship",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": "0/10"
+    },
+    "master_over_baseline_plus": {
+      "command": "grep -n -m1 'master \u2212 Baseline+' research/B01_result.md",
+      "display": "+.0988 [+.0909, +.1068]",
+      "note": "frozen master \u2212 Baseline+, 0/10 games negative",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 0.0988
+    },
+    "master_over_baseline_plus_hi": {
+      "command": "grep -n -m1 'master \u2212 Baseline+' research/B01_result.md",
+      "display": "+.1068",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 0.1068
+    },
+    "master_over_baseline_plus_lo": {
+      "command": "grep -n -m1 'master \u2212 Baseline+' research/B01_result.md",
+      "display": "+.0909",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 0.0909
+    },
+    "master_over_ship": {
+      "command": "grep -n -m1 'master \u2212 ship' research/B01_result.md",
+      "display": "+.0208 [+.0169, +.0250]",
+      "note": "frozen master \u2212 ship, 0/10 games negative",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 0.0208
+    },
+    "master_over_ship_hi": {
+      "command": "grep -n -m1 'master \u2212 ship' research/B01_result.md",
+      "display": "+.0250",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 0.025
+    },
+    "master_over_ship_lo": {
+      "command": "grep -n -m1 'master \u2212 ship' research/B01_result.md",
+      "display": "+.0169",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 0.0169
+    },
+    "mbr_delta": {
+      "command": "grep -n -m1 '\\| b MBR \\|.*?\\*\\*(-\\.0074)' research/E26_mbr.md",
+      "display": "\u2212.0074",
+      "recomputed": false,
+      "source": "research/E26_mbr.md",
+      "tolerance": 0.0,
+      "value": -0.0074
+    },
+    "metrica_d_spread": {
+      "command": "grep -n -m1 'with (20)x spread in its own present-D share' work/DECISIONS.md",
+      "display": "20\u00d7",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 20
+    },
+    "missed_share": {
+      "command": "grep -n -m1 'so \\*\\*(78\\.9%) of GT spells are missed' research/E46_missed_spells.md",
+      "display": "79%",
+      "recomputed": false,
+      "source": "research/E46_missed_spells.md",
+      "tolerance": 0.0,
+      "value": 0.789
+    },
     "missing_share_graded": {
       "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show missing_share_graded",
       "display": "40.7%",
@@ -565,6 +903,14 @@
       "tolerance": 0.0,
       "value": 0.0099
     },
+    "postprocess_delta_current": {
+      "command": "grep -n -m1 'absolute value on the current stack is \\*\\*(\\+\\.0113)\\*\\*' work/FINDINGS.md",
+      "display": "+.0113",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.0113
+    },
     "practice_easier": {
       "command": "grep -n -m1 'about (\\.06) easier' solution/docs/HOW_WE_WORK.md",
       "display": ".06",
@@ -629,45 +975,31 @@
       "tolerance": 0.0,
       "value": 0.373
     },
-    "pred_d_runs": {
-      "command": "grep -n -m1 'D stretches 114' work/FINDINGS.md",
-      "display": "114",
+    "practice_seeds": {
+      "command": "grep -n 'seeds' work/DECISIONS.md",
+      "display": "three",
       "recomputed": false,
-      "source": "work/FINDINGS.md (E14)",
+      "source": "work/DECISIONS.md D-022",
       "tolerance": 0.0,
-      "value": 114
+      "value": 3
     },
     "pred_d_share_graded": {
-      "command": "grep -n -m1 'H 51,037' research/Q26_e66_repro.md",
-      "display": "45.0%",
-      "recomputed": false,
-      "source": "research/Q26_e66_repro.md (validator counts)",
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show pred_d_share_graded",
+      "display": ".4574",
+      "note": "D frames over graded frames",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
       "tolerance": 0.0,
-      "value": 0.4498
+      "value": 0.4574
     },
     "pred_spells": {
-      "command": "grep -n -m1 'Final spells 414' research/Q26_e66_repro.md",
-      "display": "414",
-      "recomputed": false,
-      "source": "research/Q26_e66_repro.md",
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show pred_spells",
+      "display": "370",
+      "note": "maximal H/A runs; D splits them",
+      "recomputed": true,
+      "source": "solution/outputs/submission.csv (counted row by row)",
       "tolerance": 0.0,
-      "value": 414
-    },
-    "public_baseline2": {
-      "command": "grep -n -m1 'against (\\.326) for their 2-second baseline' solution/docs/WHAT_WE_TRIED.md",
-      "display": ".326",
-      "recomputed": false,
-      "source": "solution/docs/WHAT_WE_TRIED.md",
-      "tolerance": 0.0,
-      "value": 0.326
-    },
-    "public_baseline5": {
-      "command": "grep -n -m1 'and (\\.424) for their 5-second one' solution/docs/WHAT_WE_TRIED.md",
-      "display": ".424",
-      "recomputed": false,
-      "source": "solution/docs/WHAT_WE_TRIED.md",
-      "tolerance": 0.0,
-      "value": 0.424
+      "value": 370
     },
     "public_gt_spells": {
       "command": "grep -n '17 GT spells' work/DECISIONS.md",
@@ -685,21 +1017,125 @@
       "tolerance": 0.0,
       "value": 5
     },
+    "public_raw_macro": {
+      "command": "grep -n -m1 '\\| raw \\| \\.0378 \\| (\\.5972) \\| 131/17' work/DECISIONS.md",
+      "display": ".5972",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 0.5972
+    },
+    "public_raw_spellf1": {
+      "command": "grep -n -m1 'smooth25 \\.2868,\\s*raw (\\.0378);' research/Z01_final_report.md",
+      "display": ".0378",
+      "recomputed": false,
+      "source": "research/Z01_final_report.md",
+      "tolerance": 0.0,
+      "value": 0.0378
+    },
+    "public_raw_spells": {
+      "command": "grep -n -m1 '\\| raw \\| \\.0378 \\| \\.5972 \\| (131)/17' work/DECISIONS.md",
+      "display": "131",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 131
+    },
     "public_ship_macro": {
-      "command": "grep -n -m1 'Our frame-level score there is \\*{0,2}(\\.[0-9]{3,4})' solution/docs/WHAT_WE_TRIED.md",
+      "command": "grep -n -m1 'spellF1 \\.4686, macroF1 (\\.7199)' research/B01_result.md",
       "display": ".7199",
       "recomputed": false,
-      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "source": "research/B01_result.md",
       "tolerance": 0.0,
       "value": 0.7199
     },
     "public_ship_spellf1": {
-      "command": "grep -n -m1 'the shipped entry scores \\*{0,2}(\\.[0-9]{3,4})' solution/docs/WHAT_WE_TRIED.md",
+      "command": "grep -n -m1 'spellF1 (\\.4686), macroF1 \\.7199' research/B01_result.md",
       "display": ".4686",
       "recomputed": false,
-      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "source": "research/B01_result.md",
       "tolerance": 0.0,
       "value": 0.4686
+    },
+    "public_ship_spells": {
+      "command": "grep -n -m1 'macroF1 \\.7199, (18) predicted vs 17 GT' research/B01_result.md",
+      "display": "18",
+      "recomputed": false,
+      "source": "research/B01_result.md",
+      "tolerance": 0.0,
+      "value": 18
+    },
+    "public_smooth125_macro": {
+      "command": "grep -n -m1 '\\| smooth125 \\| \\.4242 \\| (\\.5812) \\| 16/17' work/DECISIONS.md",
+      "display": ".5812",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 0.5812
+    },
+    "public_smooth125_spellf1": {
+      "command": "grep -n -m1 'ours \\.4686,\\s*smooth125 (\\.4242),' research/Z01_final_report.md",
+      "display": ".4242",
+      "recomputed": false,
+      "source": "research/Z01_final_report.md",
+      "tolerance": 0.0,
+      "value": 0.4242
+    },
+    "public_smooth125_spells": {
+      "command": "grep -n -m1 '\\| smooth125 \\| \\.4242 \\| \\.5812 \\| (16)/17' work/DECISIONS.md",
+      "display": "16",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 16
+    },
+    "public_smooth25_macro": {
+      "command": "grep -n -m1 '\\| smooth25 \\| \\.2868 \\| (\\.6200) \\| 36/17' work/DECISIONS.md",
+      "display": ".6200",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 0.62
+    },
+    "public_smooth25_spellf1": {
+      "command": "grep -n -m1 'smooth50 \\.3256,\\s*smooth25 (\\.2868),' research/Z01_final_report.md",
+      "display": ".2868",
+      "recomputed": false,
+      "source": "research/Z01_final_report.md",
+      "tolerance": 0.0,
+      "value": 0.2868
+    },
+    "public_smooth25_spells": {
+      "command": "grep -n -m1 '\\| smooth25 \\| \\.2868 \\| \\.6200 \\| (36)/17' work/DECISIONS.md",
+      "display": "36",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 36
+    },
+    "public_smooth50_macro": {
+      "command": "grep -n -m1 'smooth50 \\*\\(published floor\\)\\* \\| \\.3256 \\| (\\.6207) \\| 26/17' work/DECISIONS.md",
+      "display": ".6207",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 0.6207
+    },
+    "public_smooth50_spellf1": {
+      "command": "grep -n -m1 'smooth125 \\.4242,\\s*smooth50 (\\.3256),' research/Z01_final_report.md",
+      "display": ".3256",
+      "recomputed": false,
+      "source": "research/Z01_final_report.md",
+      "tolerance": 0.0,
+      "value": 0.3256
+    },
+    "public_smooth50_spells": {
+      "command": "grep -n -m1 'smooth50 \\*\\(published floor\\)\\* \\| \\.3256 \\| \\.6207 \\| (26)/17' work/DECISIONS.md",
+      "display": "26",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 26
     },
     "restart_team_pp": {
       "command": "grep -n -m1 'changed it by (\u22120\\.4) points' solution/docs/WHAT_WE_TRIED.md",
@@ -709,6 +1145,22 @@
       "tolerance": 0.0,
       "value": -0.4
     },
+    "shape_auc_idsse": {
+      "command": "grep -n -m1 'home-minus-away team width is (0\\.88)' research/E04_result.md",
+      "display": ".88",
+      "recomputed": false,
+      "source": "research/E04_result.md",
+      "tolerance": 0.0,
+      "value": 0.88
+    },
+    "shape_auc_metrica": {
+      "command": "grep -n -m1 '0\\.88 \\(IDSSE\\) and (0\\.90)' research/E04_result.md",
+      "display": ".90",
+      "recomputed": false,
+      "source": "research/E04_result.md",
+      "tolerance": 0.0,
+      "value": 0.9
+    },
     "shape_correct": {
       "command": "grep -n -m1 'Correct (87%) of the time' solution/docs/WHAT_WE_TRIED.md",
       "display": "87%",
@@ -716,6 +1168,42 @@
       "source": "solution/docs/WHAT_WE_TRIED.md",
       "tolerance": 0.0,
       "value": 0.87
+    },
+    "shape_dead_gap_m": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show shape_dead_gap_m",
+      "display": "\u22120.4 m",
+      "note": "same difference inside dead ball-missing gaps",
+      "recomputed": true,
+      "source": "solution/possession/external.py, metrica:game1",
+      "tolerance": 0.02,
+      "value": -0.41
+    },
+    "shape_width_def_m": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show shape_width_def_m",
+      "display": "11.3 m",
+      "note": "defending team, live frames",
+      "recomputed": true,
+      "source": "solution/possession/external.py, metrica:game1",
+      "tolerance": 0.02,
+      "value": 11.32
+    },
+    "shape_width_diff_m": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show shape_width_diff_m",
+      "display": "2.5 m",
+      "note": "own minus defending",
+      "recomputed": true,
+      "source": "solution/possession/external.py, metrica:game1",
+      "tolerance": 0.02,
+      "value": 2.53
+    },
+    "shape_width_own_m": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show shape_width_own_m",
+      "display": "13.9 m",
+      "note": "possession team, live frames",
+      "recomputed": true,
+      "source": "solution/possession/external.py, metrica:game1",
+      "tolerance": 0.02,
+      "value": 13.85
     },
     "ship_dev": {
       "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
@@ -743,6 +1231,22 @@
       "tolerance": 0.0,
       "value": 20
     },
+    "sliver_gaps": {
+      "command": "grep -n -m1 '~(\\d+) gaps of 2-4 s per game on dev' work/DECISIONS.md",
+      "display": "10",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 10
+    },
+    "sliver_share": {
+      "command": "grep -n -m1 '~\\.(\\d+)% of graded; inflates ingap' work/DECISIONS.md",
+      "display": "0.5%",
+      "recomputed": false,
+      "source": "work/DECISIONS.md",
+      "tolerance": 0.0,
+      "value": 0.05
+    },
     "smooth50_dev": {
       "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
       "display": ".3037",
@@ -767,6 +1271,14 @@
       "source": "research/E76_regrid.md",
       "tolerance": 0.0,
       "value": -0.0011
+    },
+    "stage_moved": {
+      "command": "grep -n -m1 'only 87 \\((0\\.69)%\\) are moved \u22650\\.5 s' research/E83_handover_scatter.md",
+      "display": "0.69%",
+      "recomputed": false,
+      "source": "research/E83_handover_scatter.md",
+      "tolerance": 0.0,
+      "value": 0.0069
     },
     "subgap_ci_high": {
       "command": "grep -n -m1 'E69 sub-gap gate overlay \\| \\+\\.0044 \\[\\+\\.0032\\] \\| \\[\\.0033,(\\.0056)\\]' research/E76_regrid.md",
@@ -831,6 +1343,14 @@
       "source": "solution/docs/HOW_WE_WORK.md",
       "tolerance": 0.0,
       "value": 0.07
+    },
+    "viterbi_delta": {
+      "command": "grep -n -m1 '\\| a Viterbi \\|.*?\\*\\*(-\\.0114)' research/E26_mbr.md",
+      "display": "\u2212.0114",
+      "recomputed": false,
+      "source": "research/E26_mbr.md",
+      "tolerance": 0.0,
+      "value": -0.0114
     }
   },
   "generated_by": "solution/scripts/walkthrough_numbers.py",

@@ -58,6 +58,7 @@ FIGURES = {
     "fig_stage_grown": ("4", True, "Stage 5, grown stoppages: each resting-ball moment is extended to the stoppage around it. Local render."),
     "fig_stage_subgap": ("4", True, "Stage 6, the sub-gap rule: a stoppage inside a gap the main gate left alone. Local render."),
     "fig_gate_instruments": ("5", False, "Two independent instruments agree on how much of the missing time is dead. Aggregates only."),
+    "fig_killed": ("6", False, "Each dropped arm's decisive spellF1 delta against the shipped stack. Synthetic from numbers only."),
     "fig_width_schematic": ("5", False, "The team with the ball is wider; the defending team is narrow. Synthetic."),
     "fig_shape_deform": ("5", True, "The shape clue in a real missing-ball gap: the wide team changes as the owner changes. Local render."),
 }
@@ -203,7 +204,8 @@ def _spellf1_figure(numbers, scene):
     axt.text(15, 0.5, "D", ha="center", va="center", color="#555555", fontsize=12, weight="bold")
     axt.set_yticks([])
     axt.set_xticks([0, 5, 10, 15, 20])
-    axt.tick_params(labelsize=8)
+    axt.set_xticklabels(["0", "5", "10", "15", "20"])
+    axt.tick_params(labelsize=9, length=0)
     axt.set_title("TRUE", fontsize=8.5, loc="left", color="#555555")
     for s in axt.spines.values():
         s.set_visible(False)
@@ -219,7 +221,8 @@ def _spellf1_figure(numbers, scene):
                                     edgecolor="white", lw=1.5))
     axp.set_yticks([])
     axp.set_xticks([0, 5, 10, 15, 20])
-    axp.tick_params(labelsize=8)
+    axp.set_xticklabels(["0", "5", "10", "15", "20"])
+    axp.tick_params(labelsize=9, length=0)
     axp.set_title("PREDICTED", fontsize=8.5, loc="left", color="#555555")
     for s in axp.spines.values():
         s.set_visible(False)
@@ -238,8 +241,8 @@ def _spellf1_figure(numbers, scene):
     if not scene["ious"]:
         axi.text(0.5, 0.5, "no predicted H spell", ha="center", va="center", fontsize=9, color="#888888")
     axi.set_yticks([])
-    axi.set_xlabel("IoU of one predicted fragment against the true ten-second spell", fontsize=8.5)
-    axi.tick_params(labelsize=8)
+    axi.set_xlabel("IoU of one predicted fragment against the true ten-second spell", fontsize=9)
+    axi.tick_params(labelsize=9, length=0)
     for s in axi.spines.values():
         s.set_visible(False)
 
@@ -252,8 +255,9 @@ def _spellf1_figure(numbers, scene):
                                 facecolor="#c0392b" if scene["f1"] < 0.5 else "#2e7d32", edgecolor="none"))
     axf.text(0.5, 0.72, "spellF1 = %.2f" % scene["f1"], ha="center", fontsize=12, weight="bold", color="#222222")
     axf.set_xticks([0, 0.5, 1])
+    axf.set_xticklabels(["0", "0.5", "1"])
     axf.set_yticks([])
-    axf.tick_params(labelsize=8)
+    axf.tick_params(labelsize=9, length=0)
     for s in axf.spines.values():
         s.set_visible(False)
 
@@ -373,6 +377,10 @@ def fig_gate_instruments(numbers, profile):
     hi = e["e25_ci_high"]["value"]
     ax.errorbar([0], [vals[0]], yerr=[[vals[0] - lo], [hi - vals[0]]], fmt="none",
                 ecolor="#222222", capsize=5, lw=1.2)
+    lo36 = e["e36_dead_low"]["value"]
+    hi36 = e["e36_dead_high"]["value"]
+    ax.errorbar([1], [vals[1]], yerr=[[vals[1] - lo36], [hi36 - vals[1]]], fmt="none",
+                ecolor="#222222", capsize=5, lw=1.2)
     for i, v in enumerate(vals):
         ax.text(i, v + 0.045, "%.1f%%" % (100 * v), ha="center", fontsize=11, weight="bold")
     ax.set_ylim(0, 1.0)
@@ -384,6 +392,32 @@ def fig_gate_instruments(numbers, profile):
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
     return _save(fig, "fig_gate_instruments", profile)
+
+
+def fig_killed(numbers, profile):
+    """One small chart: the decisive spellF1 delta of each dropped arm (numbers only, synthetic)."""
+    plt = _mpl()
+    e = numbers["entries"]
+    arms = [("Viterbi decode", "viterbi_delta"), ("MBR decode", "mbr_delta"),
+            ("duration HSMM", "hsmm_delta"), ("split D blocks", "split_delta")]
+    vals = [float(e[k]["value"]) for _, k in arms]
+    names = [n for n, _ in arms]
+    fig, ax = plt.subplots(figsize=(8.2, 3.2))
+    colors = ["#c0392b"] * len(vals)
+    ax.barh(names[::-1], vals[::-1], color=colors, height=0.55)
+    def fmt(v):
+        return ("%+.4f" % v).replace("+0.", "+.").replace("-0.", "−.")
+
+    for y, v in zip(names[::-1], vals[::-1]):
+        ax.text(v - 0.0005, y, fmt(v), va="center", ha="right", fontsize=9, color="#333333")
+    ax.axvline(0, color="#333333", lw=0.9)
+    ax.set_xlabel("spellF1 delta against the shipped stack (dev-v1)")
+    ax.set_xlim(min(vals) - 0.004, 0.001)
+    ax.set_title("every dropped arm lost on the practice set", fontsize=11, loc="left")
+    ax.grid(axis="x", alpha=0.2)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    return _save(fig, "fig_killed", profile)
 
 
 def fig_width_schematic(numbers, profile):
@@ -551,16 +585,19 @@ def _shape_deform():
 
 
 def _placeholder(name, caption):
-    """Neutral public-profile card; carries the caption in the notebook, not the image."""
+    """Neutral public-profile card carrying the same caption as the local figure."""
+    import textwrap
     plt = _mpl()
-    fig, ax = plt.subplots(figsize=(9.0, 4.6))
+    fig, ax = plt.subplots(figsize=(9.0, 4.8))
     ax.set_facecolor("#f4f4f4")
     ax.add_patch(plt.Rectangle((0.02, 0.02), 0.96, 0.96, facecolor="#f4f4f4", edgecolor="#bbbbbb", lw=1.2))
-    ax.text(0.5, 0.62, "figure withheld in the public profile", ha="center", fontsize=13, weight="bold",
+    ax.text(0.5, 0.80, "figure withheld in the public profile", ha="center", fontsize=13, weight="bold",
             color="#444444")
-    ax.text(0.5, 0.48, "this figure renders real tracking data,\nwhich is local-only (D-002).",
+    ax.text(0.5, 0.65, textwrap.fill(caption, 72), ha="center", va="center", fontsize=10,
+            color="#555555", style="italic", wrap=True)
+    ax.text(0.5, 0.33, "this figure renders real tracking data,\nwhich is local-only (D-002).",
             ha="center", fontsize=10, color="#666666")
-    ax.text(0.5, 0.30, "rebuild with  --profile local  to render it", ha="center", fontsize=9,
+    ax.text(0.5, 0.18, "rebuild with  --profile local  to render it", ha="center", fontsize=9,
             color="#888888", family="DejaVu Sans Mono")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
@@ -582,6 +619,7 @@ SYNTHETIC = {
     "fig_missingness": fig_missingness,
     "fig_gate_instruments": fig_gate_instruments,
     "fig_width_schematic": fig_width_schematic,
+    "fig_killed": fig_killed,
 }
 
 LOCAL = {
@@ -619,7 +657,7 @@ def build_figures(profile, numbers, only=None):
 
 def _prose(numbers):
     """Section -> list of blocks. Blocks: ("md", text), ("fig", name), ("flex", [names]),
-    ("stage_table", None), ("trace", None)."""
+    and the generated tables. Every measured number is a ``{key}`` from numbers.json."""
     S = {}
 
     S["title"] = [
@@ -627,306 +665,260 @@ def _prose(numbers):
                "\n"
                "**A traceable walkthrough of our frame-level possession model.**\n"
                "\n"
-               "More than a Hack 2027 · Barcelona vs Athletic Club. This notebook is prose and figures only: "
-               "the code that produced every number and every clip is in `solution/`, and the appendix at the "
-               "bottom goes from a sentence to the exact command that recomputes it."),
+               "More than a Hack 2027 · Barcelona vs Athletic Club. Prose and figures only: the code behind "
+               "every number and clip is in `solution/`, and the appendix maps each number to its source. The "
+               "configuration is frozen (D-029), so every number here belongs to the frozen build."),
     ]
 
     S["1"] = [
         ("md", "## 1. The problem: a ball that keeps disappearing\n"
                "\n"
-               "Watch the clip below. Barcelona is moving the ball in their own half. The players are jogging "
-               "into shape, the ball is visible, and then the tracking loses it. Six seconds later the ball is "
-               "still gone and the players have stopped. The answer strip under the pitch turns gray: the "
-               "stretch is **dead**."),
+               "Watch the clip. Barcelona moves the ball in their own half, the players jog into shape, and the "
+               "tracking loses the ball. Six seconds later it is still gone and the players have stopped. The "
+               "answer strip under the pitch turns gray: the stretch is **dead**."),
         ("fig", "fig_match_gap"),
-        ("md", "The clip is twenty seconds of our match, rendered from the same tracking file the submission "
-               "uses. The gray band is a **ball-missing run**: a run of frames where the tracker has no ball "
-               "position at all. The red band is the model's **D** label. On our match the ball is missing for "
-               "{missing_share_graded} of the graded frames, and almost all of that missing time is a stoppage. "
-               "That single fact is the spine of this notebook."),
-        ("md", "The task is to give one of **{n_labels} labels** to every graded frame. **H** means Barcelona has "
-               "the ball, **A** means Athletic has it, and **D** means the ball is dead: a throw-in, a corner, a "
-               "foul, a goal, an injury, a cooling break. A **possession** is a maximal unbroken run of H or A; "
-               "D ends it. We answer at {fps}, for {graded_frames} graded frames out of "
-               "{all_frames} in the match, and the answer has to be a coherent sequence, not a per-frame guess."),
+        ("md", "Twenty seconds of our match, rendered from the submission's own tracking file. The gray band is a "
+               "**ball-missing run**, frames with no ball position at all; the red band is the model's **D**. The "
+               "ball is missing for {missing_share_graded} of graded frames, and almost all of that time is a "
+               "stoppage. That fact is the spine of this notebook."),
+        ("md", "The task is one of **{n_labels} labels** per graded frame: **H** Barcelona, **A** Athletic, **D** "
+               "dead ball. A **possession** is a maximal unbroken run of H or A; D ends it. We answer at {fps} for "
+               "{graded_frames} of {all_frames} frames, and the sequence must be coherent."),
         ("fig", "fig_three_labels"),
-        ("md", "The obvious first rule is **who is nearest the ball**. It is the organizers' own starter "
-               "baseline, and it is a good place to start: with a {nearest_radius_m} radius, a player near the "
-               "ball is usually the player who has it. But nearest is not **owner**. The owner is the team that "
-               "last touched the ball; it keeps the ball through a pass in the air, a dribble, or a scramble, "
-               "until the other team touches it. In the schematic below the defender is the nearest player to "
-               "the ball, but the ball is still traveling from the passer to the receiver, so the owner has "
-               "not changed."),
+        ("md", "The obvious first rule is **who is nearest the ball**, the organizers' starter baseline, and with a "
+               "{nearest_radius_m} radius it is a good start. But nearest is not **owner**: the owner is the team "
+               "that last touched the ball and keeps it through a flight, a dribble or a scramble. In the "
+               "schematic the defender is nearest, but the ball is still travelling from passer to receiver."),
         ("fig", "fig_nearest_player"),
-        ("md", "This is not a corner case. On clean practice data the nearest-player rule catches {flip_recall_clean} "
-               "of the visible changes of owner; on data degraded to our noise it catches {flip_recall_degraded}. "
-               "About {unresolvable_share} of owner changes cannot be resolved from geometry at all: the ball "
-               "is hidden, the players are in a duel, or the tracking disagrees with the label. A model that "
-               "only looks at the nearest player is therefore blind to a large part of the problem, and that "
-               "is why the rest of this notebook is about two other clues: **ball missingness** and **team "
-               "shape**."),
+        ("md", "On clean practice data nearest catches {flip_recall_clean} of visible owner changes; degraded to "
+               "our noise, {flip_recall_degraded}, and about {unresolvable_share} cannot be resolved from geometry "
+               "at all. Hence two other clues: **missingness** and **team shape**."),
     ]
 
     S["2"] = [
         ("md", "## 2. The score: why one extra boundary is expensive\n"
                "\n"
-               "Imagine one true possession: Barcelona has the ball for ten seconds, then the whistle goes. "
-               "The animation below is synthetic — no match data — and it is scored by the organizer's own "
-               "metric, not by a cartoon. It is the single most important figure in this notebook, because "
-               "the scoring rule explains almost every design choice we made."),
+               "One true possession: Barcelona has the ball for ten seconds, then the whistle goes. The animation "
+               "is synthetic and scored by the organizer's own metric, not a cartoon. It explains almost every "
+               "design choice we made."),
         ("fig", "fig_spellf1"),
-        ("md", "The score is **spellF1**. Possessions are maximal runs of H or A. Each predicted possession is "
-               "matched one-to-one to a true possession by **temporal IoU**, which is the length of the shared "
-               "frames divided by the length of the union: one means the two intervals are identical, zero "
-               "means they do not overlap. The F-score of that matching is averaged over IoU thresholds from "
-               "{demo_iou_low} to {demo_iou_high}. A prediction is not credited for finding the right team if "
-               "its interval is in the wrong place."),
-        ("md", "The animation walks through the same true spell five times. A perfect answer scores "
-               "{demo_perfect}. Split the answer in two with a one-second D gap and the score falls to "
-               "{demo_split2}: each fragment has an IoU of {demo_iou2} against the true spell, so it is still "
-               "inside the averaging band, but only one fragment can be matched and the other is a false "
-               "positive. Split it in three and the score is {demo_split3}; each fragment's IoU is "
-               "{demo_iou3}, at the edge of the band. Split it in four and the score is {demo_split4}: every "
-               "fragment's IoU is {demo_iou4}, below the {demo_iou_low} floor, so nothing matches. Miss the "
-               "spell completely and the score is also {demo_missed}."),
+        ("md", "The score is **spellF1**. Possessions are matched one-to-one by **temporal IoU**, the shared frames "
+               "divided by the union, and the F-score is averaged over thresholds {demo_iou_low}–{demo_iou_high}. "
+               "The right team is not enough if the interval is in the wrong place."),
+        ("md", "A perfect answer scores {demo_perfect}. Split it in two with a one-second D gap: {demo_split2}, with "
+               "each fragment at IoU {demo_iou2} — inside the band, but only one can match and the other is a false "
+               "positive. Split in three: {demo_split3}, IoU {demo_iou3}, at the edge of the band. Split in four: "
+               "{demo_split4}, every fragment at IoU {demo_iou4}, below the {demo_iou_low} floor, so nothing "
+               "matches. Miss it completely: also {demo_missed}."),
         ("fig", "fig_spellf1_curve"),
-        ("md", "The asymmetry is the point. A missed possession costs one false negative. A spurious boundary "
-               "costs a false positive *and* damages the host possession it cut, because the host now has to "
-               "compete with its own fragment for the one-to-one match. This is why we are conservative about "
-               "inserting hand-overs, and why a clue that improves frame accuracy can still lose score. On a "
-               "full match, differences below about {noise_band} are noise. The public five minutes hold only "
-               "{public_gt_spells} true possessions, which is why we never choose a method on them."),
+        ("md", "The asymmetry is the point. A missed possession costs one false negative; a spurious boundary costs "
+               "a false positive *and* damages the host possession it cut, which must now compete with its own "
+               "fragment. Hence our caution about hand-overs, and why a clue can raise frame accuracy and still "
+               "lose score. Differences below about {noise_band} are noise, and the public five minutes hold only "
+               "{public_gt_spells} possessions, so we never choose a method on them."),
     ]
 
     S["3"] = [
         ("md", "## 3. The practice set: ten matches, made to look like ours\n"
                "\n"
-               "We have the true answers for {public_minutes} public minutes of our match, and the rules forbid "
-               "tuning on them. {public_gt_spells} possessions is not enough to choose a threshold, and the "
-               "organizers show that tuning on that sample picks the wrong answer even for a one-parameter "
-               "baseline. So every choice is made on other professional matches with public answers, after we "
-               "make their data look like ours."),
-        ("md", "The clip below is one practice passage, before and after **degrading**. On the left, the clean "
-               "match: the ball stays visible while play is stopped, so a ball-based rule would see the "
-               "stoppage for free. On the right, the same passage after the ball is dropped where our tracker "
-               "drops it, the ball path is smoothed, and the gap edges are jittered. The stoppage is still "
-               "there in the players; the ball is not."),
+               "We have the true answers for {public_minutes} public minutes, and the rules forbid tuning on them: "
+               "{public_gt_spells} possessions cannot choose a threshold, and tuning there picks the wrong answer "
+               "even for a one-parameter baseline. Every choice is made on other professional matches with public "
+               "answers, after we make their data look like ours."),
+        ("md", "The clip is one practice passage, clean and **degraded**. Clean, the ball stays visible through the "
+               "stoppage, so a ball-based rule sees it for free. Degraded, the ball is dropped where our tracker "
+               "drops it, the path is smoothed and the gap edges jittered: the stoppage is still there in the "
+               "players, the ball is not."),
         ("flex", ["fig_practice_clean", "fig_practice_degraded"]),
-        ("md", "The practice set is **{practice_games} matches**: {practice_idsse} from the German league and "
-               "{practice_metrica} from Metrica. A second set of {skillcorner_games} SkillCorner matches is used "
-               "only for who-has-the-ball questions, never pooled with the ten. The ten are frozen: same games, "
-               "same seeds, same degrader, same cells. Any method we compare sees exactly the same data."),
+        ("md", "The practice set is **{practice_games} matches**: {practice_idsse} German-league and "
+               "{practice_metrica} Metrica. A second set of {skillcorner_games} SkillCorner matches is used only "
+               "for who-has-the-ball questions, never pooled. The ten are frozen — same games, seeds, degrader and "
+               "cells."),
         ("fig", "fig_missingness"),
-        ("md", "The histogram is the reason the practice set had to be repaired. Our match hides the ball for "
-               "{missing_share_graded} of graded frames; the degraded practice set hides it for "
-               "{practice_missing_share}, close enough. The conditional level did not match at first: the "
-               "original degrader dropped the ball at random, including during live play, so "
+        ("md", "The set had to be repaired. Our match hides the ball for {missing_share_graded} of graded frames, "
+               "the degraded practice set for {practice_missing_share}, close enough. The conditional level did "
+               "not match: the old degrader dropped the ball at random, including in live play, so "
                "{practice_live_missing_old} of practice live frames had no ball against {ours_live_missing} of "
-               "ours. After the fix the practice set is at {practice_live_missing}, and "
-               "{practice_long_gap_live} of long gaps are live against {ours_long_gap_live} of ours. The old "
-               "gap taught the model that a missing ball is compatible with live play, which is exactly wrong "
-               "for our data."),
-        ("md", "We found two flaws and fixed both. The first was the **resting ball**: in the practice data a "
-               "ball lying still for a restart shook about twenty times more than in a real match, so ball "
-               "motion separated dead from live far too well. Fixing the sign dropped the texture-only "
-               "separability from a perfect score to {flaw_texture_auc} on the ten games and "
-               "{flaw_texture_auc_heldout} on twenty held-out SkillCorner games, still worse than our "
-               "{flaw_target_auc} target; ball-motion clues are therefore quoted as upper bounds. The second "
-               "was **where the ball hides**. After the fix, Baseline+ moved from {baseline_plus_old} to "
-               "{baseline_plus_new}, and the in-gap decoder's gain fell from {ingap_old} to {ingap_new}. Every "
-               "number measured before that fix was wrong in the same direction."),
-        ("md", "One property cannot be measured on our match: how often a stoppage keeps the ball visible. "
-               "Label-free instruments put it between {visible_share_lo} and {visible_share_hi} of stoppages, "
-               "so every method is tested across that range. The practice set is also about {practice_easier} "
-               "easier than the real match — the organizers' two-second baseline scores {smooth50_dev} there "
-               "and {smooth50_match} on the real match — so we trust the ranking of methods, never the level."),
+               "ours. After the fix it is {practice_live_missing}, and {practice_long_gap_live} of long gaps are "
+               "live against {ours_long_gap_live} of ours. The old gap taught the model the opposite of the truth."),
+        ("md", "Two flaws, both fixed. The **resting ball** shook about twenty times too much, so ball motion "
+               "separated dead from live far too well; fixing the sign took texture-only separability from perfect "
+               "to {flaw_texture_auc}, and {flaw_texture_auc_heldout} on twenty held-out SkillCorner games, still "
+               "short of our {flaw_target_auc} target — ball-motion clues are upper bounds. The second was **where "
+               "the ball hides**: after the fix Baseline+ moved from {baseline_plus_old} to {baseline_plus_new} "
+               "and the in-gap gain fell from {ingap_old} to {ingap_new}. The set is also about {practice_easier} "
+               "easier than the match — {smooth50_dev} against {smooth50_match} for the two-second baseline — so "
+               "we trust the ranking, never the level."),
     ]
 
     S["4"] = [
         ("md", "## 4. The pipeline, one stage at a time\n"
                "\n"
-               "Here is a practice passage through the shipped stack. The first three stages use one passage; "
-               "the last three use a passage where that stage actually fires, because no single passage "
-               "exercises all six. Each stage has one job, one number on the frozen practice set, and one way "
-               "to hurt us if it is wrong. The numbers are marginal: each stage is measured on the stack it "
-               "actually ships on, not as an additive decomposition."),
-        ("md", "**Stage 1 — nearest player, smoothed.** The organizers' two-second baseline: the nearest player "
-               "within a radius votes, and the vote is majority-smoothed over fifty frames. It is the floor we "
-               "have to beat: {smooth50_dev} spellF1 on the frozen practice set."),
+               "No single passage exercises all six stages, and the reason is structural: the gate needs a long "
+               "ball-missing gap, grown D needs a visible resting ball, the decoder needs a gap the gate left live, "
+               "and the sub-gap rule needs one it left alone. No window holds all four conditions, so the clips "
+               "come from four passages — stages one to three share a window, and each later clip is the window "
+               "where that stage changes a label."),
+        ("md", "**Stage 1 — nearest player, smoothed.** The organizers' two-second baseline: nearest player within "
+               "a radius, majority-smoothed over fifty frames. The floor to beat: {smooth50_dev}."),
         ("fig", "fig_stage_smooth50"),
-        ("md", "**Stage 2 — hysteresis and merge (Baseline+).** A player within {nearest_radius_m} owns the "
-               "ball; otherwise the last owner keeps it. Short flickers are held back and short spells are "
-               "merged. On the practice set it scores {baseline_plus_dev}, a gain of "
-               "{baseline_plus_over_smooth50} over the two-second baseline. That lead does not survive a "
-               "half-second shift of the answers, so the honest reading is *about level to slightly ahead*. "
-               "If hysteresis is too strong, we absorb a real short turnover; if it is too weak, we emit "
-               "flickers, which the score punishes twice."),
+        ("md", "**Stage 2 — hysteresis and merge.** A player within {nearest_radius_m} owns the ball, otherwise the "
+               "last owner keeps it. It scores {baseline_plus_dev}, {baseline_plus_over_smooth50} over the floor, "
+               "but that lead does not survive a half-second shift, so read it as *about level to slightly ahead*. "
+               "Too much hysteresis absorbs a turnover; too little emits flickers, which cost twice."),
         ("fig", "fig_stage_baseline_plus"),
-        ("md", "**Stage 3 — the missing-ball gate.** When the ball has been gone for a while and the players "
-               "are standing still, the stretch becomes D. This is the largest single gain in the stack: "
-               "{gate_over_baseline_plus} on the practice set, with no game negative. On our match the expected "
-               "gain is {expected_gate} because our gaps are longer and cleaner than the practice set's. If "
-               "the gate is wrong, it turns live possession into a stoppage and cuts a real spell in two, which "
-               "is the most expensive error the score can charge."),
+        ("md", "**Stage 3 — the missing-ball gate.** Ball gone for a while and players still: the stretch becomes "
+               "D. The largest gain in the stack, {gate_over_baseline_plus}, no game negative; expected "
+               "{expected_gate} on our match. A wrong gate turns live possession into a stoppage and cuts a spell, "
+               "the most expensive error the score charges."),
         ("fig", "fig_stage_gate"),
-        ("md", "**Stage 4 — the in-gap decoder.** Inside a missing-ball gap, team shape says which team is "
-               "wider and therefore more likely to have the ball. The decoder is allowed to insert a hand-over "
-               "there. On the practice set it adds {ingap_over_gate}; on our match only {eligible_ours} of "
-               "graded frames are eligible, so the expected gain is {expected_ingap}. The clip below shows the "
-               "mechanism, not a success story: on this passage the decoder inserts an H island where the "
-               "answer stays A. That is exactly why its average gain is small and why it runs only after the "
-               "gate."),
+        ("md", "**Stage 4 — the in-gap decoder.** In a missing-ball gap, team shape says which team is wider and "
+               "more likely to have the ball, so the decoder may insert a hand-over. It adds {ingap_over_gate}, but "
+               "only {eligible_ours} of our frames are eligible, so expected {expected_ingap}. The clip shows the "
+               "mechanism, not a success: an H island where the answer stays A."),
         ("fig", "fig_stage_ingap"),
-        ("md", "**Stage 5 — grown stoppages.** A resting ball is a real stoppage, but it is only a sliver of "
-               "one. We extend each resting-ball moment out to the stoppage around it, with a radius and a "
-               "thirty-second cap. On the practice set this adds {grown_delta} "
-               "[{grown_ci_low}, {grown_ci_high}], expected {expected_grown} on our match. It is only safe on "
-               "top of the gate: on raw Baseline+ most of the changed frames land in live play. If the radius "
-               "is too wide, we eat the restart."),
+        ("md", "**Stage 5 — grown stoppages.** A resting ball is a real stoppage but only a sliver. Extend each "
+               "moment to the stoppage around it, with a radius and a thirty-second cap: {grown_delta} "
+               "[{grown_ci_low}, {grown_ci_high}], expected {expected_grown}. Only safe on top of the gate; on raw "
+               "Baseline+ most changed frames are live play."),
         ("fig", "fig_stage_grown"),
-        ("md", "**Stage 6 — the sub-gap rule.** Some stoppages sit inside missing-ball gaps that the main gate "
-               "left alone. A second, weaker rule fires when the stoppage probability stays above one half for "
-               "two seconds inside such a gap. It adds {subgap_delta} [{subgap_ci_low}, {subgap_ci_high}] on "
-               "the practice set, expected about {expected_subgap} on our match. If it fires on a live gap, it "
-               "creates a D island inside a possession."),
+        ("md", "**Stage 6 — the sub-gap rule.** Some stoppages sit inside gaps the gate left alone. A weaker rule "
+               "fires when the stoppage probability stays above one half for two seconds: {subgap_delta} "
+               "[{subgap_ci_low}, {subgap_ci_high}], expected about {expected_subgap}. On a live gap it creates a D "
+               "island inside a possession."),
         ("fig", "fig_stage_subgap"),
-        ("md", "The stack is not quite the order above: the build applies the gate, then grown stoppages, then "
-               "the in-gap decoder, then the sub-gap rule. The marginal numbers are the ones measured for each "
-               "module on its shipping base in the build cards, so read them as evidence for each stage, not as a "
-               "running sum. The next tier-1 add-on is not wired yet: deleting every H/A spell shorter than "
-               "one and a half seconds and absorbing it into D adds {postprocess_delta} "
-               "[{postprocess_ci_low}, {postprocess_ci_high}] on the practice set, with an expected "
-               "{expected_postprocess} on our match. It is waiting for the build card."),
+        ("md", "The build applies them gate, grown D, in-gap, sub-gap, then the short-spell floor, because grown D "
+               "must be excluded from the re-decode and the sub-gap rule must see the gate's output. The numbers are "
+               "marginal, not a running sum. The floor **is** wired in the frozen build: deleting H/A spells under "
+               "one and a half seconds adds {postprocess_delta} [{postprocess_ci_low}, {postprocess_ci_high}] on the "
+               "pre-add-on stack and {postprocess_delta_current} on the frozen labels, and it is the last label write "
+               "on every return path. It is a trade — real short possessions are deleted to remove more false ones — "
+               "not free pruning."),
         ("stage_table", None),
-        ("md", "The gate-plus-decoder stack is {ship_over_smooth50} over the two-second baseline on the practice "
-               "set. On our "
-               "match the frozen shipped file calls {pred_d_share_graded} of graded frames dead, finds "
-               "{pred_spells} possessions across {pred_d_runs} D runs, and leaves {ball_in_play_min} of ball "
-               "in play. The build is the clean-clone Q26 reproduction, sha `{csv_sha8}`. Those are "
-               "label-free descriptions, not scores."),
     ]
 
     S["5"] = [
         ("md", "## 5. The two clues that carry it\n"
                "\n"
-               "In the clip at the top of the notebook the ball is gone for six seconds. Two completely "
-               "different instruments were asked the same question — is this missing time a stoppage? — and "
-               "they agree. One is a classifier trained on player motion. The other is the broadcast camera's "
-               "own ball track, which follows the ball through gaps the tactical tracker misses. Neither uses "
-               "the answers."),
+               "At the top of the notebook the ball is gone for six seconds. Two instruments were asked whether "
+               "that time is a stoppage: a classifier trained on player motion, and the broadcast camera's own "
+               "ball track, which follows the ball through gaps the tactical tracker misses. Neither uses the "
+               "answers."),
         ("fig", "fig_gate_instruments"),
-        ("md", "The player-motion classifier flags {e25_dead_share} [{e25_ci_low}, {e25_ci_high}] of our "
-               "missing time as dead; the broadcast route puts {e36_dead_share} of it dead. After correcting "
-               "for the frames each instrument cannot see, the probability that a missing frame is dead is "
-               "between {gate_pd_missing_low} and {gate_pd_missing_high}. Two instruments with different "
-               "failure modes landing on the same number is the strongest label-free evidence we have. It is "
-               "still not a license to call every gap dead: a long live dropout would cut a possession, so the "
-               "gate also requires the players to be still."),
-        ("md", "The second clue is **team shape**. The team with the ball spreads out to create space; the "
-               "defending team stays compact. The schematic makes the idea; the real clip after it shows it "
-               "inside a missing-ball gap."),
+        ("md", "The player-motion classifier flags {e25_dead_share} [{e25_ci_low}, {e25_ci_high}] of our missing "
+               "time as dead; the broadcast route puts {e36_dead_share} of it dead, with the verified-live bucket "
+               "at {e36_live_low}–{e36_live_high}, carrying the dead share to about {e36_dead_low}–"
+               "{e36_dead_high}. After correcting for what each cannot see, the probability that a missing frame "
+               "is dead is {gate_pd_missing_low}–{gate_pd_missing_high}. Two instruments with different failure "
+               "modes agreeing is the strongest label-free evidence we have — not a license to call every gap dead, "
+               "so the gate also requires still players."),
+        ("md", "The second clue is **team shape**. The team with the ball spreads out; the defender stays compact. "
+               "On live practice frames the possession team's width is {shape_width_own_m} against "
+               "{shape_width_def_m}, a difference of about {shape_width_diff_m} that separates them with AUC about "
+               "{shape_auc_idsse}–{shape_auc_metrica}. The catch is where it applies: inside a dead gap the same "
+               "difference collapses to {shape_dead_gap_m}, because both teams walk into position. So it works only "
+               "where the gap is live, and only {eligible_ours} of our frames are eligible against {eligible_dev} "
+               "on the practice set — hence {expected_ingap}, not the large number the decoder scored alone."),
         ("fig", "fig_width_schematic"),
         ("fig", "fig_shape_deform"),
-        ("md", "A model trained only on team shape picks the team with the ball correctly {shape_correct} of "
-               "the time on unseen matches, without seeing the ball. That is why the in-gap decoder can recover "
-               "a hand-over the ball never showed. The catch is coverage: only {eligible_ours} of our graded "
-               "frames are eligible for the decoder, against {eligible_dev} on the practice set, so the "
-               "expected gain is {expected_ingap}. The clue is real; its reach on this match is small. It also "
-               "shares a blind spot with the gate — both are weakest at the edge of a stoppage, where the "
-               "players are just starting to move — so we do not treat their agreement as independent "
-               "confirmation of a boundary."),
     ]
 
     S["6"] = [
         ("md", "## 6. What we tried and dropped\n"
                "\n"
-               "The most tempting idea was to find the kick. A kick is a sudden change in the ball's velocity; "
-               "on clean public data the textbook detector finds {kick_recall_low} to {kick_recall_high} of "
-               "them. On our ball it fails, because our ball path is smoothed over about a third of a second, "
-               "which spreads the kick out. We confirmed the cause by smoothing the practice ball the same way: "
-               "the method fails there too."),
-        ("md", "That result set the pattern for the rest of the notebook: a clue that works on clean data is "
-               "not evidence until it survives our noise. The table below is the honest list, with the number "
-               "that killed each idea."),
+               "The most tempting idea was to find the kick. On clean public data the textbook detector finds "
+               "{kick_recall_low}–{kick_recall_high} of them; on our ball it fails, because the path is smoothed "
+               "over about a third of a second. Smoothing the practice ball the same way reproduces the failure."),
+        ("md", "That set the pattern: a clue that works on clean data is not evidence until it survives our noise. "
+               "The table carries the number that killed each idea. The duration model was the expensive attempt — "
+               "an explicit-duration HSMM scores {hsmm_delta} [{hsmm_ci_low}, {hsmm_ci_high}], negative in nine of "
+               "ten games, while a sticky HMM without the prior scores {hmm_delta} [{hmm_ci_low}, {hmm_ci_high}] "
+               "— positive but including zero, so tier-2. The prior is what loses. Restart-team-by-type changed "
+               "accuracy by {restart_team_pp}; splitting long blocks scores {split_delta}; crowd loudness led by "
+               "{crowd_lead}, below our five-point floor; a public audio model heard a synthetic whistle at "
+               "{panns_synthetic} but the real one at {panns_real}."),
         ("drop_table", None),
-        ("md", "The duration model deserves a sentence of its own because it was the most expensive attempt. "
-               "An explicit-duration HSMM over learned emissions scores {hsmm_delta} "
-               "[{hsmm_ci_low}, {hsmm_ci_high}] against the shipped stack, negative in nine of ten games. A "
-               "learned sticky HMM without the duration prior scores {hmm_delta} "
-               "[{hmm_ci_low}, {hmm_ci_high}], which is positive but includes zero and is negative in two "
-               "games: a tier-2 lever, not a replacement. The duration prior is what loses; the emission "
-               "calibration is the open question."),
-        ("md", "Restart-team-by-stoppage-type was falsified as pre-registered. Adding the stoppage type changed "
-               "restart-team accuracy by {restart_team_pp} and made spellF1 worse in every variant, because "
-               "most long predicted stoppages bridge several real stoppages and some live play: the team "
-               "before the block is not the team that last touched the ball. Splitting long blocks looked good "
-               "on the old practice data, but after the degrader fix it scores {split_delta}, negative in ten "
-               "of ten games. Crowd loudness tracked microphone placement, not the match: its lead was "
-               "{crowd_lead}, below our five-point floor. A public audio-event model heard a synthetic whistle "
-               "at {panns_synthetic} but this match's real whistle at about {panns_real}; our small hand-built "
-               "detector stays."),
+        ("fig", "fig_killed"),
     ]
 
-    S["limits"] = [
-        ("md", "## Limitations\n"
+    S["7"] = [
+        ("md", "## 7. Results on the frozen build\n"
                "\n"
-               "The public sample is {public_minutes} minutes and {public_gt_spells} possessions. We report "
-               "the shipped entry's score there as {public_ship_spellf1} spellF1 and {public_ship_macro} "
-               "macroF1, against {public_baseline2} and {public_baseline5} for the organizers' two- and "
-               "five-second baselines, but it is a direction, not a result: the noise band on a full match is "
-               "about {noise_band}, and {public_gt_spells} possessions cannot resolve a small difference. "
-               "Nothing in this notebook was selected on that sample."),
-        ("md", "The practice set is about {practice_easier} easier than the real match, so its levels are not "
-               "our levels. It has no cooling breaks and no video-review stops; Metrica over-calls dead ball "
-               "around advantage play; it contains short sliver gaps our match does not; and its resting-ball "
-               "recall is much lower than clean data's. The share of stoppages that keep the ball visible on "
-               "our match is only pinned to {visible_share_lo}-{visible_share_hi}. The in-gap decoder is "
-               "eligible on {eligible_ours} of our graded frames, so its {expected_ingap} expected gain is near "
-               "the noise floor."),
-        ("md", "The biggest weakness is unchanged: we catch only about one in five real possessions well "
-               "enough to count. About {unresolvable_share} of owner changes cannot be resolved from geometry "
-               "at all, and our hand-overs are slightly early, with a scatter that costs far more than the "
-               "bias. The score is dominated by the possessions we miss, not by the frames we label. The "
-               "shipped file calls {pred_d_share_graded} of graded frames dead, which is high against a "
-               "football prior; part of that is a real cooling break and part is the residue of present-ball "
-               "stoppages we still miss. The short-spell floor is measured but not wired, so the current CSV "
-               "does not yet contain its gain."),
-        ("md", "Finally, every figure that renders tracking is local-only under D-002. The public profile of "
-               "this notebook replaces those figures with placeholders; the prose and the synthetic schematics "
-               "are the publishable part. The full evidence, including the numbers this notebook does not "
-               "quote, is in `research/` and `solution/docs/WHAT_WE_TRIED.md`."),
+               "The configuration is frozen (D-029). This is the dev reference: ten practice games, six primary "
+               "cells, game-cluster intervals. The frozen row is **one run of the whole stack**, not a sum of the "
+               "component deltas above."),
+        ("results_table", None),
+        ("comparisons_table", None),
+        ("md",  "Against the organizers' floor, the pre-floor stack is {ship_over_smooth50}; the frozen stack and that "
+               "floor were never measured as a pair, so we do not quote the arithmetic difference."),
+        ("md", "The gain is smaller on our match. Reach-scaled, the frozen stack should beat the pre-floor stack by "
+               "{expected_master}, not the {master_over_ship} measured on dev, because dev is about "
+               "{practice_easier} easier and the new levers reach less of our match. Everything that moved moved for "
+               "one reason: the D layer. The gate supplies most of the {master_over_baseline_plus} over Baseline+; "
+               "the grown, sub-gap and floor rules add a few thousandths each."),
+        ("md", "What the file itself looks like, counted row by row from the frozen CSV:"),
+        ("diag_table", None),
+        ("md", "{pred_spells} spells, {ball_in_play_min} of play and {pred_d_share_graded} dead are in the right "
+               "football neighbourhood; they do **not** say the labels are right. Our match is dead-heavier than "
+               "the football prior because of the cooling break and tracker-lost visible balls. These are "
+               "label-free descriptions, not scores."),
+        ("md", "The public window, one run, reported and never a selector:"),
+        ("public_table", None),
+        ("md", "Sorted by spellF1 we are first on both metrics, but seventeen true possessions is inside noise and "
+               "the prediction has eighteen. Nothing was chosen here. There is no defensible absolute full-match "
+               "score: every interval above is a paired delta, dev is easier than the match, and the public window "
+               "is a direction check."),
+    ]
+
+    S["8"] = [
+        ("md", "## 8. Limits, and what would fix them\n"
+               "\n"
+               "The practice set's eight blind spots (D-022) bound what transfers:"),
+        ("blind_table", None),
+        ("md", "The biggest weakness is recall, not D. On the practice set {missed_share} of real possessions are "
+               "missed — about one in five is caught. That is a dev figure from the gate-plus-in-gap stack, not a "
+               "match measurement, which needs labels we do not have. The owner-change family is most of the loss, "
+               "and much of it has no tracked ball."),
+        ("md", "Hand-over scatter is **evidence-limited, not rule-limited** (E83). {handover_tail} "
+               "[{handover_tail_low}, {handover_tail_high}] of matched hand-overs are over a second off "
+               "({handover_early} early, {handover_late} late), and {handover_cue_share} of that tail is the "
+               "{nearest_radius_m} nearest-player cue itself: a duel has no timing information, and on a pass the "
+               "receiver is nearest long before the touch. Only {stage_moved} of tail flips are moved by half a second "
+               "or more by any stage after Baseline+, so no post-processing rule reaches the {handover_oracle} "
+               "oracle. The route is a "
+               "contact detector at about {contact_s}; on this tracking the ball is smoothed over several frames, "
+               "which puts it out of reach."),
+        ("md", "What a different data source would fix: contact-level tracking would attack the tail and reopen the "
+               "tier-2 `anchor` lever; a practice regime with cooling breaks and video-review stops would test the "
+               "learned arms where they gain, since their advantage is confined to dead-frame motion the ten games "
+               "lack; a GPU ball detector would add ball coverage but not contact timing, and nothing may depend on "
+               "it (D-004). We would not retry touch rebuilds, explicit-duration priors, a learned decoder instead of "
+               "the gate, splitting long D blocks, or restart-team-from-type: each has a decisive negative above."),
     ]
 
     S["close"] = [
         ("md", "## Code, data and acknowledgements\n"
                "\n"
-               "The shipped build is one command in `solution/`: `python -m possession.make_submission`. The "
-               "pipeline modules are `baseline_plus.py`, `dgate.py`, `ingap.py`, `growd.py`, `subgap.py` and "
-               "`postprocess.py`; the scoring harness is `dev_v1.py`; the clip renderer is `render.py`. This "
-               "notebook is built by `scripts/walkthrough_numbers.py` and `scripts/build_walkthrough.py`, and "
-               "the numbers manifest is `notebooks/numbers.json`."),
-        ("md", "The practice data is public tracking from the German league (DFL), Metrica and SkillCorner, "
-               "used under their licenses and never redistributed here. The match data is the organizer's and "
-               "stays on this machine. The scoring code is the organizer's `evaluation/possession_metrics.py`, "
-               "imported rather than re-implemented."),
-        ("md", "Thanks to the organizers for a problem where the honest answer is usually a negative result, "
-               "and to the four reference notebooks that showed how to write one down."),
+               "The build is one command in `solution/`: `python -m possession.make_submission`. The pipeline "
+               "modules are `baseline_plus.py`, `dgate.py`, `growd.py`, `ingap.py`, `subgap.py` and "
+               "`postprocess.py`; the harness is `dev_v1.py`; the renderer is `render.py`. The notebook is built "
+               "by `scripts/walkthrough_numbers.py` and `scripts/build_walkthrough.py` from `numbers.json`."),
+        ("md", "The practice data is public tracking from DFL, Metrica and SkillCorner, used under their licenses "
+               "and never redistributed. The match data is the organizer's and stays on this machine. The scoring "
+               "code is the organizer's `evaluation/possession_metrics.py`, imported, not re-implemented. Figures "
+               "that render tracking are local-only under D-002; the public profile replaces them with placeholders."),
     ]
 
     S["appendix"] = [
         ("md", "## Appendix: traceability\n"
                "\n"
-               "Every measured number in the prose is a key in `notebooks/numbers.json`. The table is generated "
-               "from that file, so it cannot drift from the notebook: the *source* is where the value lives, "
-               "the *command* is how to see it again, and *recomputed* says whether `--check` rebuilds it from "
-               "the live pipeline or reads it from a digest. The section column is the part of the notebook "
-               "that uses the key."),
-        ("figure_table", None),
+               "Every measured number in the prose is a key in `notebooks/numbers.json`, with its value, source, "
+               "exact command and whether `--check` recomputes it from the live pipeline. The table lists the "
+               "headline keys; the rest are in that file, and the figure table names the eighteen figures."),
         ("trace", None),
+        ("figure_table", None),
     ]
     return S
-
 
 # ----------------------------------------------------------------------------- tables
 
@@ -977,34 +969,134 @@ def _drop_table(numbers):
     return "\n".join(out)
 
 
+def _results_table(numbers):
+    e = numbers["entries"]
+    rows = [
+        ("row", "dev-v1 spellF1", "marginal gain", "reading"),
+        ("smooth50", e["smooth50_dev"]["display"], "—", "reference floor"),
+        ("Baseline+", e["baseline_plus_dev"]["display"],
+         e["baseline_plus_over_smooth50"]["display"] + " vs smooth50", "about level to slightly ahead"),
+        ("D gate", e["gate_dev"]["display"],
+         e["gate_over_baseline_plus"]["display"] + " vs Baseline+", "the D sensor"),
+        ("ship (gate + in-gap)", e["ship_dev"]["display"],
+         e["ingap_over_gate"]["display"] + " vs gate", "D-021 reference"),
+        ("**frozen master**", "**" + e["master_dev"]["display"] + "**",
+         "**" + e["master_over_ship"]["display"] + " vs ship**",
+         "**" + e["master_neg"]["display"] + " games negative**"),
+    ]
+    out = ["| " + " | ".join(rows[0]) + " |", "|" + "|".join(["---"] * len(rows[0])) + "|"]
+    out += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(out)
+
+
+def _comparisons_table(numbers):
+    e = numbers["entries"]
+
+    def rng(key):
+        return "[" + e[key + "_lo"]["display"] + ", " + e[key + "_hi"]["display"] + "]"
+
+    rows = [("comparison", "delta", "95% game-cluster CI", "games negative"),
+            ("master − ship", "**" + _delta_of(e["master_over_ship"]) + "**",
+             rng("master_over_ship"), e["master_neg"]["display"]),
+            ("master − Baseline+", _delta_of(e["master_over_baseline_plus"]),
+             rng("master_over_baseline_plus"), e["master_neg"]["display"])]
+    out = ["| " + " | ".join(rows[0]) + " |", "|" + "|".join(["---"] * len(rows[0])) + "|"]
+    out += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(out)
+
+
+def _delta_of(entry):
+    return entry["display"].split(" [")[0]
+
+
+def _diag_table(numbers):
+    e = numbers["entries"]
+    rows = [("diagnostic", "frozen CSV"),
+            ("rows / graded frames", e["all_frames"]["display"] + " / " + e["graded_frames"]["display"]),
+            ("H / A / D / X", " / ".join(e[k]["display"] for k in ("count_h", "count_a", "count_d", "count_x"))),
+            ("D share of graded", e["pred_d_share_graded"]["display"]),
+            ("spells (maximal H/A runs)", e["pred_spells"]["display"]),
+            ("D stretches", e["d_stretches"]["display"] + " (" + e["d_runs_ge_15s"]["display"] + " at least 1.5 s)"),
+            ("ball in play", e["ball_in_play_min"]["display"] + " of " + e["graded_min"]["display"] + " graded"),
+            ("sha256", "`" + e["csv_sha8"]["display"] + "`")]
+    out = ["| " + " | ".join(rows[0]) + " |", "|" + "|".join(["---"] * len(rows[0])) + "|"]
+    out += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(out)
+
+
+def _public_table(numbers):
+    e = numbers["entries"]
+    rows = [("run", "spellF1", "macroF1", "predicted / GT spells")]
+    for key, label in (("ship", "**ours (frozen)**"), ("smooth125", "smooth125"),
+                       ("smooth50", "smooth50 (published floor)"), ("smooth25", "smooth25"),
+                       ("raw", "raw")):
+        rows.append((label, e["public_%s_spellf1" % key]["display"], e["public_%s_macro" % key]["display"],
+                     e["public_%s_spells" % key]["display"] + "/" + e["public_gt_spells"]["display"]))
+    out = ["| " + " | ".join(rows[0]) + " |", "|" + "|".join(["---"] * len(rows[0])) + "|"]
+    out += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(out)
+
+
+def _blind_table(numbers):
+    e = numbers["entries"]
+    rows = [
+        ("blind spot", "what it does to the numbers"),
+        ("no cooling breaks or VAR stops in dev",
+         "part of the sim-to-real gap is structural; our D share is legitimately higher"),
+        ("Metrica over-calls D around advantage play",
+         str(e["practice_metrica"]["value"]) + " of " + str(e["practice_games"]["value"]) +
+         " games; " + e["metrica_d_spread"]["display"] + " spread in its own present-D share"),
+        ("sliver gaps",
+         "~" + e["sliver_gaps"]["display"] + " gaps of 2–4 s per game, " + e["sliver_share"]["display"] +
+         " of graded; in-gap and sub-gap gains are upper-ish"),
+        ("resting-ball recall on dev",
+         e["anchor_recall_knob0"]["display"] + " / " + e["anchor_recall_knob1"]["display"] + " against " +
+         e["anchor_recall_clean"]["display"] + " clean; grown D is measured pessimistically"),
+        ("gap-edge spread",
+         "symmetric, sd ~" + e["gap_edge_sd_s"]["display"] + "; the fitted spread is " +
+         e["gap_edge_spread_min"]["display"] + "–" + e["gap_edge_spread_max"]["display"] + " larger"),
+        ("geometry (checked, closed)",
+         "nearest player " + e["geom_nearest_dev"]["display"] + " vs " + e["geom_nearest_match"]["display"] +
+         "; proximity cues are not inflated"),
+        ("ten games, " + e["practice_seeds"]["display"] + " seeds, level 1",
+         "CIs omit degrader misspecification; one match"),
+        ("level, not ranking",
+         e["smooth50_dev"]["display"] + " on dev against " + e["smooth50_match"]["display"] +
+         " published; only orderings transfer"),
+    ]
+    out = ["| " + " | ".join(rows[0]) + " |", "|" + "|".join(["---"] * len(rows[0])) + "|"]
+    out += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(out)
+
+
 def _figure_table():
-    rows = [("figure", "section", "profile", "built by", "what it shows")]
-    builders = {
-        "fig_three_labels": "fig_three_labels", "fig_nearest_player": "fig_nearest_player",
-        "fig_spellf1": "fig_spellf1", "fig_spellf1_curve": "fig_spellf1_curve",
-        "fig_missingness": "fig_missingness", "fig_gate_instruments": "fig_gate_instruments",
-        "fig_width_schematic": "fig_width_schematic", "fig_match_gap": "_local_match_gap",
-        "fig_practice_clean": "_practice_pair", "fig_practice_degraded": "_practice_pair",
-        "fig_shape_deform": "_shape_deform",
-    }
+    rows = [("figure", "section", "profile")]
     for name in sorted(FIGURES):
         section, local_only, caption = FIGURES[name]
-        builder = builders.get(name, "_stage_figs")
-        profile = "local only" if local_only else "both"
-        command = "`build_walkthrough.py --figs-only --only %s`" % name
-        rows.append((name, section, profile, "`%s` / %s" % (builder, command), caption))
+        rows.append((name, section, "local only" if local_only else "both"))
     out = ["| " + " | ".join(rows[0]) + " |", "|" + "|".join(["---"] * len(rows[0])) + "|"]
     out += ["| " + " | ".join(str(c) for c in r) + " |" for r in rows[1:]]
     return "\n".join(out)
 
 
+HEADLINE_KEYS = (
+    "master_dev", "master_over_ship", "master_over_baseline_plus", "master_neg", "expected_master",
+    "smooth50_dev", "baseline_plus_dev", "gate_dev", "ship_dev", "ship_over_smooth50",
+    "gate_over_baseline_plus", "ingap_over_gate", "grown_delta", "subgap_delta", "postprocess_delta",
+    "postprocess_delta_current",
+    "pred_spells", "d_stretches", "pred_d_share_graded", "ball_in_play_min", "graded_min", "csv_sha8",
+    "public_ship_spellf1", "public_ship_macro", "public_ship_spells", "missed_share",
+    "handover_tail", "handover_cue_share", "stage_moved", "handover_oracle", "e25_dead_share",
+    "e36_dead_share", "shape_width_diff_m", "shape_dead_gap_m",
+)
+
+
 def _trace_table(numbers, key_sections):
-    rows = [("key", "value", "section", "source", "command", "recomputed")]
-    for key in sorted(numbers["entries"]):
+    rows = [("key", "value", "section", "recomputed")]
+    for key in HEADLINE_KEYS:
         e = numbers["entries"][key]
-        section = ", ".join(key_sections.get(key, [])) or "—"
-        rows.append((key, e["display"], section, e["source"], "`" + e["command"].replace("|", "\\|") + "`",
-                     "yes" if e["recomputed"] else "no"))
+        section = ", ".join(key_sections.get(key, ["—"]))
+        rows.append((key, e["display"], section, "yes" if e["recomputed"] else "no"))
     out = ["| " + " | ".join(rows[0]) + " |", "|" + "|".join(["---"] * len(rows[0])) + "|"]
     out += ["| " + " | ".join(str(c) for c in r) + " |" for r in rows[1:]]
     return "\n".join(out)
@@ -1030,7 +1122,10 @@ def _fig_block(name, profile):
         src = "figs/public/%s.png" % name
     else:
         src = "figs/%s%s" % (name, ext)
-    return '<img src="%s" style="width:100%%">' % src
+    caption = FIGURES[name][2]
+    return ('<img src="%s" style="width:100%%">\n'
+            '<div class="caption" style="font-size:0.9em; color:#555; margin:2px 0 14px 0;">%s</div>'
+            % (src, caption))
 
 
 def build_notebook(numbers, profile):
@@ -1058,8 +1153,21 @@ def build_notebook(numbers, profile):
     for k in ("kick_recall_low", "kick_recall_high", "coupling_low", "coupling_high", "video_recall",
               "video_false", "ball_px", "hsmm_delta", "hsmm_ci_low", "hsmm_ci_high", "hmm_delta",
               "hmm_ci_low", "hmm_ci_high", "restart_team_pp", "split_delta", "crowd_lead",
-              "panns_synthetic", "panns_real"):
+              "panns_synthetic", "panns_real", "mbr_delta", "viterbi_delta"):
         key_sections.setdefault(k, ["6"])
+    for k in ("master_dev", "master_over_ship", "master_over_ship_lo", "master_over_ship_hi",
+              "master_over_baseline_plus", "master_over_baseline_plus_lo", "master_over_baseline_plus_hi",
+              "master_neg", "all_frames", "graded_frames", "count_h", "count_a", "count_d", "count_x",
+              "pred_d_share_graded", "pred_spells", "d_stretches", "d_runs_ge_15s", "ball_in_play_min",
+              "graded_min", "csv_sha8", "public_gt_spells"):
+        key_sections.setdefault(k, ["7"])
+    for k in list(numbers["entries"]):
+        if k.startswith("public_"):
+            key_sections.setdefault(k, ["7"])
+    for k in ("metrica_d_spread", "sliver_gaps", "sliver_share", "anchor_recall_knob0",
+              "anchor_recall_knob1", "anchor_recall_clean", "gap_edge_sd_s", "gap_edge_spread_min",
+              "gap_edge_spread_max", "geom_nearest_dev", "geom_nearest_match", "practice_seeds"):
+        key_sections.setdefault(k, ["8"])
     # --check: every placeholder exists
     missing = sorted({f for blocks in S.values() for kind, payload in blocks if kind == "md"
                       for f in fields(payload) if f not in displays})
@@ -1089,7 +1197,7 @@ def build_notebook(numbers, profile):
         raise SystemExit("hand-typed digits in prose (use a numbers.json key):\n  " + "\n  ".join(bad))
 
     cells = []
-    for key in ("title", "1", "2", "3", "4", "5", "6", "limits", "close", "appendix"):
+    for key in ("title", "1", "2", "3", "4", "5", "6", "7", "8", "close", "appendix"):
         for kind, payload in S[key]:
             if kind == "md":
                 cells.append(_cell(payload.format(**displays)))
@@ -1103,6 +1211,16 @@ def build_notebook(numbers, profile):
                 cells.append(_cell(_stage_table(numbers)))
             elif kind == "drop_table":
                 cells.append(_cell(_drop_table(numbers)))
+            elif kind == "results_table":
+                cells.append(_cell(_results_table(numbers)))
+            elif kind == "comparisons_table":
+                cells.append(_cell(_comparisons_table(numbers)))
+            elif kind == "diag_table":
+                cells.append(_cell(_diag_table(numbers)))
+            elif kind == "public_table":
+                cells.append(_cell(_public_table(numbers)))
+            elif kind == "blind_table":
+                cells.append(_cell(_blind_table(numbers)))
             elif kind == "figure_table":
                 cells.append(_cell(_figure_table()))
             elif kind == "trace":

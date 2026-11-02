@@ -19,6 +19,8 @@ The notebook builder substitutes ``{key}`` from this file, so no number in the p
 Reads the match for the morphology entries; never reads or scores the public answers.
 """
 import argparse
+import collections
+import csv
 import hashlib
 import json
 import math
@@ -156,13 +158,78 @@ def _dev_ref(m):
                 source="solution/possession/dev_v1.py (compare_dev_v1)", command=cmd, recomputed=True,
                 tolerance=5e-5, note="games with a negative delta: %d/10" % neg)
 
+    # The frozen D-028 row is one run of the whole stack (B01, re-run by Q28); it is not a sum of
+    # components and is not in the cached reference table, so it is read from the digest.
+    def from_digest(key, pattern, display, note, cast=float):
+        value, _ = _read("research/B01_result.md", pattern, cast=cast)
+        m.add(key, value, source="research/B01_result.md", recomputed=False,
+              command=_grep("research/B01_result.md", pattern), display=display, note=note)
+
+    from_digest("master_dev", r"master \*\*(\.4247)\*\*", ".4247",
+                "the frozen D-028 stack, one run of the whole pipeline")
+    d, _ = _read("research/B01_result.md", r"master − ship \| \*\*(\+\.0208)\*\*", cast=float)
+    lo, _ = _read("research/B01_result.md", r"master − ship \| \*\*\+\.0208\*\* \| \[\+(\.0169),", cast=float)
+    hi, _ = _read("research/B01_result.md", r"master − ship \| \*\*\+\.0208\*\* \| \[\+\.0169, \+(\.0250)\]", cast=float)
+    m.add_range("master_over_ship", round(d, 4), round(lo, 4), round(hi, 4),
+                source="research/B01_result.md", command=_grep("research/B01_result.md", "master − ship"),
+                recomputed=False, note="frozen master − ship, 0/10 games negative")
+    for suffix, v in (("lo", lo), ("hi", hi)):
+        m.add("master_over_ship_" + suffix, round(v, 4), source="research/B01_result.md",
+              command=_grep("research/B01_result.md", "master − ship"), recomputed=False,
+              display=_delta(v))
+    d, _ = _read("research/B01_result.md", r"master − Baseline\+ \| \*\*(\+\.0988)\*\*", cast=float)
+    lo, _ = _read("research/B01_result.md", r"master − Baseline\+ \| \*\*\+\.0988\*\* \| \[\+(\.0909),", cast=float)
+    hi, _ = _read("research/B01_result.md", r"master − Baseline\+ \| \*\*\+\.0988\*\* \| \[\+\.0909, \+(\.1068)\]", cast=float)
+    m.add_range("master_over_baseline_plus", round(d, 4), round(lo, 4), round(hi, 4),
+                source="research/B01_result.md", command=_grep("research/B01_result.md", "master − Baseline+"),
+                recomputed=False, note="frozen master − Baseline+, 0/10 games negative")
+    for suffix, v in (("lo", lo), ("hi", hi)):
+        m.add("master_over_baseline_plus_" + suffix, round(v, 4), source="research/B01_result.md",
+              command=_grep("research/B01_result.md", "master − Baseline+"), recomputed=False,
+              display=_delta(v))
+    m.add("master_neg", "0/10", source="research/B01_result.md", recomputed=False,
+          command=_grep("research/B01_result.md", "master − ship"), display="0/10",
+          note="games in which master loses to ship")
+
+
+def _runs(labels, want):
+    """Number of maximal runs whose label is in ``want`` (a later team counts as a new run)."""
+    n, prev = 0, None
+    for label in labels:
+        if label in want and label != prev:
+            n += 1
+        prev = label
+    return n
+
+
+def _submission():
+    """Counts and sha straight from the frozen CSV, so no number can drift from the artifact."""
+    path = os.path.join(SOLUTION_DIR, "outputs", "submission.csv")
+    if not os.path.isfile(path):
+        raise RuntimeError("missing %s; rebuild the submission first" % path)
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    if rows[0] != ["frame", "label"]:
+        raise RuntimeError("unexpected CSV header in %s: %r" % (path, rows[0]))
+    labels = [r[1] for r in rows[1:]]
+    if len(labels) != 199319:
+        raise RuntimeError("unexpected row count in %s: %d" % (path, len(labels)))
+    counts = collections.Counter(labels)
+    d_run_lengths, run = [], 0
+    for label in labels:
+        if label == "D":
+            run += 1
+        elif run:
+            d_run_lengths.append(run)
+            run = 0
+    if run:
+        d_run_lengths.append(run)
+    sha = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    return path, labels, counts, d_run_lengths, sha
+
 
 def _match_numbers(m):
-    """Match-level morphology from the frozen Q26 reproduction and the ball channel.
-
-    ``outputs/submission.csv`` is deliberately *not* read: other cards rebuild it, and this notebook
-    quotes the shipped file, whose counts and sha are frozen in research/Q26_e66_repro.md.
-    """
+    """Match-level morphology computed from ``outputs/submission.csv`` itself."""
     import numpy as np
     from possession import data
 
@@ -182,36 +249,98 @@ def _match_numbers(m):
         command="cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show missing_share_graded",
         note="share of graded frames with no tracked ball", tol=1e-4)
 
-    q26 = os.path.join(ROOT, "research", "Q26_e66_repro.md")
-    text = open(q26, encoding="utf-8").read()
-    counts = re.search(r"H ([\d,]+) / A ([\d,]+) / D ([\d,]+) / X ([\d,]+)", text)
-    if not counts:
-        raise RuntimeError("could not read the validator counts from research/Q26_e66_repro.md")
-    n = {k: int(v.replace(",", "")) for k, v in zip("HADX", counts.groups())}
+    path, labels, counts, d_runs, sha = _submission()
+    n = {k: counts.get(k, 0) for k in "HADX"}
     n_graded = n["H"] + n["A"] + n["D"]
-    add("all_frames", n["H"] + n["A"] + n["D"] + n["X"], "{:,}".format(n["H"] + n["A"] + n["D"] + n["X"]),
-        source="research/Q26_e66_repro.md (validator)", recomputed=False,
-        command=_grep("research/Q26_e66_repro.md", "199,319 rows"))
-    add("graded_frames", n_graded, "{:,}".format(n_graded),
-        source="research/Q26_e66_repro.md (validator)", recomputed=False,
-        command=_grep("research/Q26_e66_repro.md", "H 51,037"))
-    add("pred_d_share_graded", round(n["D"] / n_graded, 4), _pct(n["D"] / n_graded, 1),
-        source="research/Q26_e66_repro.md (validator counts)", recomputed=False,
-        command=_grep("research/Q26_e66_repro.md", "H 51,037"))
-    add("pred_spells", 414, "414", source="research/Q26_e66_repro.md", recomputed=False,
-        command=_grep("research/Q26_e66_repro.md", "Final spells 414"))
-    add("ball_in_play_min", round((n["H"] + n["A"]) / FPS / 60.0, 1),
-        _num((n["H"] + n["A"]) / FPS / 60.0, 1) + " min",
-        source="research/Q26_e66_repro.md (validator counts)", recomputed=False,
-        command=_grep("research/Q26_e66_repro.md", "H 51,037"))
-    add("pred_d_runs", 114, "114", source="work/FINDINGS.md (E14)", recomputed=False,
-        command=_grep("work/FINDINGS.md", "D stretches 114"))
-    sha = re.search(r"sha256 `([0-9a-f]{8})[0-9a-f]*([0-9a-f]{4})`", text)
-    if not sha:
-        raise RuntimeError("could not read the shipped CSV sha from research/Q26_e66_repro.md")
-    add("csv_sha8", sha.group(1), sha.group(1) + "…" + sha.group(2),
-        source="research/Q26_e66_repro.md (Q26 clean-clone build)", recomputed=False,
-        command=_grep("research/Q26_e66_repro.md", "sha256"))
+    n_all = n_graded + n["X"]
+    spells = _runs(labels, "HA")
+    cmd = "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show "
+    src = "solution/outputs/submission.csv (counted row by row)"
+    add("all_frames", n_all, "{:,}".format(n_all), source=src, recomputed=True,
+        command="wc -l < solution/outputs/submission.csv", note="rows including X")
+    add("graded_frames", n_graded, "{:,}".format(n_graded), source=src, recomputed=True,
+        command=cmd + "graded_frames", note="H + A + D")
+    for key, label in (("count_h", "H"), ("count_a", "A"), ("count_d", "D"), ("count_x", "X")):
+        add(key, n[label], "{:,}".format(n[label]), source=src, recomputed=True,
+            command=cmd + key, note="rows labelled %s" % label)
+    add("pred_d_share_graded", round(n["D"] / n_graded, 4), _score(n["D"] / n_graded),
+        source=src, recomputed=True, command=cmd + "pred_d_share_graded",
+        note="D frames over graded frames")
+    add("pred_spells", spells, str(spells), source=src, recomputed=True,
+        command=cmd + "pred_spells", note="maximal H/A runs; D splits them")
+    add("d_stretches", len(d_runs), str(len(d_runs)), source=src, recomputed=True,
+        command=cmd + "d_stretches", note="maximal D runs")
+    add("d_runs_ge_15s", sum(1 for r in d_runs if r >= 38), str(sum(1 for r in d_runs if r >= 38)),
+        source=src, recomputed=True, command=cmd + "d_runs_ge_15s",
+        note="D runs of at least 38 frames (1.52 s)")
+    add("ball_in_play_min", round((n["H"] + n["A"]) / FPS / 60.0, 2),
+        _num((n["H"] + n["A"]) / FPS / 60.0, 2) + " min",
+        source=src, recomputed=True, command=cmd + "ball_in_play_min",
+        note="H + A frames at 25 fps")
+    add("graded_min", round(n_graded / FPS / 60.0, 1), _num(n_graded / FPS / 60.0, 1) + " min",
+        source=src, recomputed=True, command=cmd + "graded_min",
+        note="graded frames at 25 fps")
+    add("csv_sha8", sha[:8], sha[:8] + "…" + sha[-4:], source=src, recomputed=True,
+        command="shasum -a 256 solution/outputs/submission.csv",
+        note="head and tail of the sha256 of the frozen file")
+
+
+def _practice_shape(m):
+    """The shape clue's size, measured on one practice game (external tracking, no match data)."""
+    import numpy as np
+    from possession import dev_v1, external
+
+    clean = external.load_game("metrica:game1")
+    match = dev_v1.degraded_match(clean, 0, 1.0, 0.12)
+    P = np.asarray(match.P)
+    B = np.asarray(match.B)
+    T = np.asarray(match.T)
+    ref = np.asarray(clean.ref)
+
+    widths = []
+    for team in (0, 1):
+        X = P[:, T == team, 1]
+        ok = np.isfinite(X)
+        mean = np.where(ok, X, 0.0).sum(1) / np.maximum(ok.sum(1), 1)
+        var = np.where(ok, (X - mean[:, None]) ** 2, 0.0).sum(1) / np.maximum(ok.sum(1), 1)
+        widths.append(np.sqrt(var))
+    widths = np.array(widths).T
+
+    present = np.isfinite(B[:, 0])
+    D = np.hypot(P[:, :, 0] - B[:, 0, None], P[:, :, 1] - B[:, 1, None])
+    ok = present & np.isfinite(D).any(1)
+    near = np.full(len(D), -1)
+    for i in np.where(ok)[0]:
+        near[i] = T[np.nanargmin(D[i])]
+    home = int(np.mean(near[ok & (ref == "H")] == 0) < 0.5)
+    own = np.where(ref == "H", home, 1 - home)
+    diff = widths[np.arange(len(widths)), own] - widths[np.arange(len(widths)), 1 - own]
+    live = ok & np.isin(ref, ["H", "A"])
+    dead_gaps = []
+    run = 0
+    for i in range(len(present) + 1):
+        if i < len(present) and not present[i]:
+            run += 1
+            continue
+        if run >= 50:
+            vals = diff[i - run:i]
+            vals = vals[np.isfinite(vals)]
+            if len(vals) > 10:
+                dead_gaps.append(float(np.mean(vals)))
+        run = 0
+    diff_live = float(np.nanmean(diff[live]))
+    own_width = float(np.nanmean(widths[np.arange(len(widths)), own][live]))
+    def_width = float(np.nanmean(widths[np.arange(len(widths)), 1 - own][live]))
+    cmd = "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show "
+    for key, value, display, note in (
+            ("shape_width_own_m", own_width, _num(own_width, 1) + " m", "possession team, live frames"),
+            ("shape_width_def_m", def_width, _num(def_width, 1) + " m", "defending team, live frames"),
+            ("shape_width_diff_m", diff_live, _num(diff_live, 1) + " m", "own minus defending"),
+            ("shape_dead_gap_m", float(np.mean(dead_gaps)),
+             _num(float(np.mean(dead_gaps)), 1).replace("-", "−") + " m",
+             "same difference inside dead ball-missing gaps")):
+        m.add(key, round(value, 2), source="solution/possession/external.py, metrica:game1",
+              command=cmd + key, recomputed=True, tolerance=0.02, display=display, note=note)
 
 
 def _metric_demo(m):
@@ -271,6 +400,8 @@ def _constants(m):
           recomputed=False, display="17")
     m.add("practice_games", 10, source="work/DECISIONS.md D-022", command="grep -n '10 games' work/DECISIONS.md",
           recomputed=False, display="10")
+    m.add("practice_seeds", 3, source="work/DECISIONS.md D-022", command="grep -n 'seeds' work/DECISIONS.md",
+          recomputed=False, display="three")
     m.add("practice_idsse", 7, source="work/DECISIONS.md D-022", command="grep -n '7 IDSSE' work/DECISIONS.md",
           recomputed=False, display="seven")
     m.add("practice_metrica", 3, source="work/DECISIONS.md D-022", command="grep -n '3 Metrica' work/DECISIONS.md",
@@ -360,6 +491,9 @@ def _digest(m):
     m.e["subgap_ci_high"]["display"] = ".0056"
     one("postprocess_delta", "research/E14_result.md", r"(\+\.0099) spellF1 \[\+\.0063, \+\.0138\]", cast=lambda s: 0.0099,
         display="+.0099")
+    one("postprocess_delta_current", "work/FINDINGS.md",
+        r"absolute value on the current stack is \*\*(\+\.0113)\*\*")
+    m.e["postprocess_delta_current"]["display"] = "+.0113"
     one("postprocess_ci_low", "research/E14_result.md", r"\[\+(\.0063), \+\.0138\]")
     m.e["postprocess_ci_low"]["display"] = ".0063"
     one("postprocess_ci_high", "research/E14_result.md", r"\[\+\.0063, \+(\.0138)\]")
@@ -391,6 +525,10 @@ def _digest(m):
     m.e["gate_pd_missing_high"]["display"] = ".99"
     one("shape_correct", "solution/docs/WHAT_WE_TRIED.md", r"Correct (87%) of the time")
     m.e["shape_correct"]["display"] = "87%"
+    one("shape_auc_idsse", "research/E04_result.md", r"home-minus-away team width is (0\.88)")
+    m.e["shape_auc_idsse"]["display"] = ".88"
+    one("shape_auc_metrica", "research/E04_result.md", r"0\.88 \(IDSSE\) and (0\.90)")
+    m.e["shape_auc_metrica"]["display"] = ".90"
     one("eligible_ours", "work/FINDINGS.md", r"eligible pool (3\.9%)")
     m.e["eligible_ours"]["display"] = "3.9%"
     rng("eligible_dev", "work/FINDINGS.md", r"vs (17)-44%",
@@ -436,21 +574,130 @@ def _digest(m):
     one("crowd_lead", "work/FINDINGS.md", r"crowd parks\*\* \(lead (\+\.027)")
     m.e["crowd_lead"]["display"] = "+.027"
 
-    # -- public sanity (report only)
-    one("public_ship_spellf1", "solution/docs/WHAT_WE_TRIED.md", r"the shipped entry scores \*{0,2}(\.[0-9]{3,4})")
+    # -- section 7: the frozen results and the public window (report only)
+    one("public_ship_spellf1", "research/B01_result.md", r"spellF1 (\.4686), macroF1 \.7199")
     m.e["public_ship_spellf1"]["display"] = ".4686"
-    one("public_ship_macro", "solution/docs/WHAT_WE_TRIED.md", r"Our frame-level score there is \*{0,2}(\.[0-9]{3,4})")
+    one("public_ship_macro", "research/B01_result.md", r"spellF1 \.4686, macroF1 (\.7199)")
     m.e["public_ship_macro"]["display"] = ".7199"
-    one("public_baseline2", "solution/docs/WHAT_WE_TRIED.md", r"against (\.326) for their 2-second baseline")
-    m.e["public_baseline2"]["display"] = ".326"
-    one("public_baseline5", "solution/docs/WHAT_WE_TRIED.md", r"and (\.424) for their 5-second one")
-    m.e["public_baseline5"]["display"] = ".424"
+    one("public_ship_spells", "research/B01_result.md", r"macroF1 \.7199, (18) predicted vs 17 GT", cast=int)
+    m.e["public_ship_spells"]["display"] = "18"
+    for name, spell_pat, macro_pat, count_pat, n in (
+            ("smooth125", r"ours \.4686,\s*smooth125 (\.4242),", r"\| smooth125 \| \.4242 \| (\.5812) \| 16/17",
+             r"\| smooth125 \| \.4242 \| \.5812 \| (16)/17", 16),
+            ("smooth50", r"smooth125 \.4242,\s*smooth50 (\.3256),",
+             r"smooth50 \*\(published floor\)\* \| \.3256 \| (\.6207) \| 26/17",
+             r"smooth50 \*\(published floor\)\* \| \.3256 \| \.6207 \| (26)/17", 26),
+            ("smooth25", r"smooth50 \.3256,\s*smooth25 (\.2868),",
+             r"\| smooth25 \| \.2868 \| (\.6200) \| 36/17",
+             r"\| smooth25 \| \.2868 \| \.6200 \| (36)/17", 36),
+            ("raw", r"smooth25 \.2868,\s*raw (\.0378);", r"\| raw \| \.0378 \| (\.5972) \| 131/17",
+             r"\| raw \| \.0378 \| \.5972 \| (131)/17", 131)):
+        one("public_%s_spellf1" % name, "research/Z01_final_report.md", spell_pat)
+        one("public_%s_macro" % name, "work/DECISIONS.md", macro_pat)
+        one("public_%s_spells" % name, "work/DECISIONS.md", count_pat, cast=int)
+        m.e["public_%s_spellf1" % name]["display"] = _score(m.e["public_%s_spellf1" % name]["value"])
+        m.e["public_%s_macro" % name]["display"] = _score(m.e["public_%s_macro" % name]["value"])
+        m.e["public_%s_spells" % name]["display"] = str(n)
+    # the on-match size of the one gain that is new in the frozen build
+    rng("expected_master", "research/Z01_final_report.md",
+        r"master − ship ≈ (\+\.011)…\+\.016", r"master − ship ≈ \+\.011…(\+\.016)", fmt=_trim,
+        note="reach-scaled, not the dev number")
+
+    # -- section 5: the second instrument's interval (E36)
+    one("e36_live_low", "research/E36_gap_mechanisms.md",
+        r"verified-live share of missing time \| 4\.09% \| \[(2\.05)%, 6\.92%\]",
+        cast=lambda s: float(s) / 100.0)
+    m.e["e36_live_low"]["display"] = "2.1%"
+    one("e36_live_high", "research/E36_gap_mechanisms.md",
+        r"verified-live share of missing time \| 4\.09% \| \[2\.05%, (6\.92)%\]",
+        cast=lambda s: float(s) / 100.0)
+    m.e["e36_live_high"]["display"] = "6.9%"
+    one("e36_unresolved", "research/E36_gap_mechanisms.md",
+        r"unresolved \| 42 \| 7,332 \| (11\.4)%", cast=lambda s: float(s) / 100.0)
+    m.e["e36_unresolved"]["display"] = "11.4%"
+    dead = m.e["e36_dead_share"]["value"]
+    live_lo = m.e["e36_live_low"]["value"]
+    live_hi = m.e["e36_live_high"]["value"]
+    lo = dead - (live_hi - live_lo) / 2.0
+    hi = dead + (live_hi - live_lo) / 2.0
+    m.add("e36_dead_low", round(lo, 4),
+          source="research/E36_gap_mechanisms.md (verified-live CI carried onto the dead share)",
+          command=_grep("research/E36_gap_mechanisms.md", "verified-live share"),
+          recomputed=False, display=_pct(lo), note="unresolved share held fixed at 11.4%")
+    m.add("e36_dead_high", round(hi, 4),
+          source="research/E36_gap_mechanisms.md (verified-live CI carried onto the dead share)",
+          command=_grep("research/E36_gap_mechanisms.md", "verified-live share"),
+          recomputed=False, display=_pct(hi), note="unresolved share held fixed at 11.4%")
+
+    # -- section 6: the dropped arms in one chart
+    one("mbr_delta", "research/E26_mbr.md", r"\| b MBR \|.*?\*\*(-\.0074)")
+    m.e["mbr_delta"]["display"] = "−.0074"
+    one("viterbi_delta", "research/E26_mbr.md", r"\| a Viterbi \|.*?\*\*(-\.0114)")
+    m.e["viterbi_delta"]["display"] = "−.0114"
+
+    # -- section 8: dev blind spots and the two evidence limits
+    one("missed_share", "research/E46_missed_spells.md",
+        r"so \*\*(78\.9%) of GT spells are missed", cast=lambda s: float(s) / 100.0)
+    m.e["missed_share"]["display"] = "79%"
+    one("handover_tail", "research/E83_handover_scatter.md",
+        r"\((46\.9)% of matched\)", cast=lambda s: float(s) / 100.0)
+    m.e["handover_tail"]["display"] = "46.9%"
+    one("handover_tail_low", "research/E83_handover_scatter.md",
+        r"matched, .*?\| \*\*12,554 \(46\.9% of matched\)\*\* \| \[(43\.9), 49\.5\]",
+        cast=lambda s: float(s) / 100.0)
+    m.e["handover_tail_low"]["display"] = "43.9%"
+    one("handover_tail_high", "research/E83_handover_scatter.md",
+        r"matched, .*?\| \*\*12,554 \(46\.9% of matched\)\*\* \| \[43\.9, (49\.5)\]",
+        cast=lambda s: float(s) / 100.0)
+    m.e["handover_tail_high"]["display"] = "49.5%"
+    one("handover_early", "research/E83_handover_scatter.md",
+        r"\| early > 1 s .*?\| (31\.2)% of matched", cast=lambda s: float(s) / 100.0)
+    m.e["handover_early"]["display"] = "31.2%"
+    one("handover_late", "research/E83_handover_scatter.md",
+        r"\| late > 1 s .*?\| (15\.7)% of matched", cast=lambda s: float(s) / 100.0)
+    m.e["handover_late"]["display"] = "15.7%"
+    one("handover_cue_share", "research/E83_handover_scatter.md",
+        r"a1\+a2 are (93\.4)% and \+\.0796", cast=lambda s: float(s) / 100.0)
+    m.e["handover_cue_share"]["display"] = "93.4%"
+    one("handover_oracle", "research/E83_handover_scatter.md", r"a1\+a2 are 93\.4% and (\+\.0796)\.")
+    m.e["handover_oracle"]["display"] = "+.0796"
+    one("stage_moved", "research/E83_handover_scatter.md",
+        r"only 87 \((0\.69)%\) are moved ≥0\.5 s", cast=lambda s: float(s) / 100.0)
+    m.e["stage_moved"]["display"] = "0.69%"
+    one("contact_s", "research/E83_handover_scatter.md", r"~(0\.16) s")
+    m.e["contact_s"]["display"] = "0.16 s"
+    one("metrica_d_spread", "work/DECISIONS.md", r"with (20)x spread in its own present-D share", cast=int)
+    m.e["metrica_d_spread"]["display"] = "20×"
+    one("sliver_gaps", "work/DECISIONS.md", r"~(\d+) gaps of 2-4 s per game on dev", cast=int)
+    m.e["sliver_gaps"]["display"] = "10"
+    one("sliver_share", "work/DECISIONS.md", r"~\.(\d+)% of graded; inflates ingap",
+        cast=lambda s: float(s) / 100.0)
+    m.e["sliver_share"]["display"] = "0.5%"
+    one("anchor_recall_knob0", "work/DECISIONS.md", r"\*\*(\.19) \(knob 0\) / \.085 \(knob 1\)\*\*")
+    m.e["anchor_recall_knob0"]["display"] = ".19"
+    one("anchor_recall_knob1", "work/DECISIONS.md", r"\.19 \(knob 0\) / (\.085) \(knob 1\)")
+    m.e["anchor_recall_knob1"]["display"] = ".085"
+    one("anchor_recall_clean", "work/DECISIONS.md", r"on dev-v1 vs \*\*(\.45) clean\*\*")
+    m.e["anchor_recall_clean"]["display"] = ".45"
+    one("gap_edge_sd_s", "work/DECISIONS.md", r"at quarter strength \(sd ~(1) s\)")
+    m.e["gap_edge_sd_s"]["display"] = "1 s"
+    one("gap_edge_spread_min", "work/DECISIONS.md", r"is (2)-4x shipped", cast=int)
+    m.e["gap_edge_spread_min"]["display"] = "2×"
+    one("gap_edge_spread_max", "work/DECISIONS.md", r"is 2-(4)x shipped", cast=int)
+    m.e["gap_edge_spread_max"]["display"] = "4×"
+    one("geom_nearest_dev", "research/E78_geometry_harshness.md",
+        r"median nearest (2\.29) vs 2\.35")
+    m.e["geom_nearest_dev"]["display"] = "2.29 m"
+    one("geom_nearest_match", "research/E78_geometry_harshness.md",
+        r"median nearest 2\.29 vs (2\.35)")
+    m.e["geom_nearest_match"]["display"] = "2.35 m"
 
 
 def build():
     m = Manifest()
     _constants(m)
     _match_numbers(m)
+    _practice_shape(m)
     _metric_demo(m)
     _dev_ref(m)
     _digest(m)

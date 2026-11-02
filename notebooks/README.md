@@ -1,8 +1,8 @@
 # The possession walkthrough notebook
 
-`possession_walkthrough.ipynb` is the prose-led, traceable version of the work: six sections, a
-centerpiece animation of the scoring rule, and an appendix that goes from any number to the command
-that produced it. It has **no code cells**. Everything executable is in `../scripts/`.
+`possession_walkthrough.ipynb` is the prose-led, traceable version of the work: eight sections (problem,
+score, practice set, pipeline, clues, negatives, results, limits), a centerpiece animation of the scoring
+rule, and an appendix that goes from a headline number to its source and command. It has **no code cells**. Everything executable is in `../scripts/`.
 
 ## Build it
 
@@ -43,7 +43,7 @@ Which is which:
 |---|---|
 | `fig_three_labels`, `fig_nearest_player` | synthetic, both |
 | `fig_spellf1`, `fig_spellf1_curve` | synthetic, both |
-| `fig_missingness`, `fig_gate_instruments`, `fig_width_schematic` | aggregates only, both |
+| `fig_missingness`, `fig_gate_instruments`, `fig_width_schematic`, `fig_killed` | aggregates/synthetic, both |
 | `fig_match_gap` | our match, local only |
 | `fig_practice_clean`, `fig_practice_degraded` | external tracking, local only |
 | `fig_stage_*` (six) | external tracking, local only |
@@ -59,8 +59,9 @@ in the prose. `walkthrough_numbers.py --check` rebuilds the recomputed values fr
 drift; digest-read values are re-parsed from `research/` on every build, so a changed digest changes
 the notebook or fails loudly.
 
-The appendix at the bottom of the notebook is generated from the same file: key, value, section,
-source and command.
+The appendix at the bottom of the notebook is generated from the same file: a headline-key table (key,
+value, section, recomputed) plus the figure table. Every key's source and exact command are in
+`numbers.json`.
 
 ## Regenerating after a pipeline change
 
