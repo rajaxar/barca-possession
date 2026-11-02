@@ -235,9 +235,23 @@ def _spellf1_figure(numbers, scene):
     axi.text(0.5, 0.86, "the 0.3-0.7 band the score averages over", ha="center", fontsize=8.5, color="#4b6043")
     axi.axhline(0.5, color="#cccccc", lw=0.8)
     colors = ["#1a5fb4", "#2a7ab0", "#4a90c2", "#7fb3d5"]
-    for i, v in enumerate(scene["ious"]):
-        axi.scatter([v], [0.5], s=110, color=colors[i % len(colors)], edgecolors="white", linewidths=1.2, zorder=4)
-        axi.text(v, 0.22 - 0.10 * (i % 2), "%.2f" % v, ha="center", fontsize=9, color="#333333")
+    # Fragments of one split share an IoU, so label each distinct value once ("0.50 ×2") instead of
+    # stacking identical labels on the same x. Dots are fanned vertically so every fragment is visible.
+    order, groups = [], {}
+    for v in scene["ious"]:
+        key = round(float(v), 4)
+        if key not in groups:
+            groups[key] = 0
+            order.append(key)
+        groups[key] += 1
+    for gi, key in enumerate(order):
+        n = groups[key]
+        for j in range(n):
+            y = 0.5 if n == 1 else 0.5 + 0.055 * (j - (n - 1) / 2.0)
+            axi.scatter([key], [y], s=110, color=colors[gi % len(colors)],
+                        edgecolors="white", linewidths=1.2, zorder=4)
+        label = "%.2f" % key + (" ×%d" % n if n > 1 else "")
+        axi.text(key, 0.20, label, ha="center", fontsize=9, color="#333333")
     if not scene["ious"]:
         axi.text(0.5, 0.5, "no predicted H spell", ha="center", va="center", fontsize=9, color="#888888")
     axi.set_yticks([])
@@ -371,7 +385,7 @@ def fig_gate_instruments(numbers, profile):
     e = numbers["entries"]
     fig, ax = plt.subplots(figsize=(8.4, 3.9))
     vals = [e["e25_dead_share"]["value"], e["e36_dead_share"]["value"]]
-    names = ["player-motion classifier\n(E25)", "broadcast ball track\n(E36)"]
+    names = ["player-motion classifier", "broadcast ball track"]
     ax.bar(names, vals, color=["#1a5fb4", "#2e7d32"], width=0.5)
     lo = e["e25_ci_low"]["value"]
     hi = e["e25_ci_high"]["value"]

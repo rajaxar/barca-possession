@@ -29,6 +29,26 @@ From `solution/`:
 `build_walkthrough.py --no-figs` rebuilds the notebook from figures already on disk. Neither script
 executes anything from inside the notebook, uses the network, or reads the public answers.
 
+## Export the public page
+
+The shareable artifact is the `public` profile rendered to one standalone HTML file: every image is
+inlined as base64, there is no JavaScript, no web font and no external request, so it opens offline.
+
+```bash
+# numbers -> public figures -> single HTML (does not rewrite the notebook on disk)
+.venv/bin/python scripts/build_walkthrough_html.py
+
+# publication audit: exit 0 = publishable, 1 = stop (script with an exit code, not a visual check)
+.venv/bin/python scripts/audit_walkthrough_public.py
+```
+
+The page is written to `notebooks/possession_walkthrough_public.html`. It is **not published** by
+these commands: the file stays local until the human decides (D-002/D-026). The audit proves the
+figure set, the absence of real-tracking images, and the absence of frame numbers, clock times,
+match paths and work-card ids outside the appendix; it also rejects any `figs/public/*.png` that is
+not pixel-identical to a freshly rendered neutral placeholder.
+
+
 ## What is local-only, and why
 
 `notebooks/figs/` is gitignored. Any figure that renders real tracking — our match or an external

@@ -32,3 +32,6 @@ env/
 
 # agent tooling state
 .omc/
+
+# regenerable public export (P04): build with scripts/build_walkthrough_html.py
+notebooks/possession_walkthrough_public.html
