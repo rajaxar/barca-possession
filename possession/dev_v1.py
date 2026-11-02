@@ -13,7 +13,9 @@ Frozen here (never edit to suit a method): the 10 games, degrader params, grid, 
 A pipeline is a function ``pred_fn(cell) -> labels`` (H/A/D/X strings or 0..3 codes, one per frame). ``cell`` has
 ``game`` (id), ``clean`` (evaluate.Game, undegraded), ``match`` (degraded Match), ``pitch``, ``seed``, ``knob``, ``v``,
 ``memo`` (dict shared by every pipeline run on this cell) and ``models`` (shipped-stack leave-one-game-out models).
-Built-in reference pipelines: ``smooth50``, ``baseline_plus``, ``gate``, ``ship`` (``STAGES``).
+Built-in reference pipelines: ``smooth50``, ``baseline_plus``, ``gate``, ``ship`` (the pre-E66
+gate+in-gap row, .4039, kept for history) and ``master`` (the D-028 shipped stack + floor, which
+calls the real :func:`possession.pipeline.build_labels`).
 
     from possession import dev_v1
     res = dev_v1.score_dev_v1(my_fn)                    # headline, per-cell, stress, v=0 and shift rows
@@ -217,14 +219,32 @@ def gate(cell):
 
 
 def ship(cell):
-    """Shipped stack: Baseline+ -> missing-ball D gate -> in-gap decoder."""
+    """Shipped stack **before E66**: Baseline+ -> missing-ball D gate -> in-gap decoder.
+
+    Kept as the D-021 historical reference (.4039 on dev-v1); every future comparison against the
+    real shipped build must use :func:`master` instead (B01).
+    """
     from . import ballfree, ingap
     m = cell.match
     ph = ballfree.predict_frames(cell.models[2], m, pitch=cell.pitch)
     return ingap.gapdec(_gate(cell), m.B, m.half, ph)
 
 
-STAGES = {"smooth50": smooth50, "baseline_plus": baseline_plus, "gate": gate, "ship": ship}
+def master(cell):
+    """The shipped D-028 stack: Baseline+ -> D gate -> grown D -> in-gap -> sub-gap -> short-spell floor.
+
+    Calls the real :func:`possession.pipeline.build_labels` with this cell's leave-one-game-out models,
+    so a dev number here is the same stage order the CSV is built with (B01). The BAR-ATH-calibrated
+    build canaries are disabled (``guard=False``) while the label path is identical: their bounds do not
+    hold on degraded practice games (e.g. v=0 legitimately adds no gated D).
+    """
+    from . import pipeline
+    return pipeline.build_labels(match=cell.match, models=cell.models, log=None, guard=False,
+                                 forced=np.zeros(len(cell.match.B), bool), pitch=cell.pitch)
+
+
+STAGES = {"smooth50": smooth50, "baseline_plus": baseline_plus, "gate": gate, "ship": ship,
+          "master": master}
 
 
 # -- running -------------------------------------------------------------------------------------

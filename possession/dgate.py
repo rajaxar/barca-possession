@@ -222,9 +222,14 @@ def check_footprint(fp):
     return fp
 
 
-def apply(labels, match, model=None):
-    """Train (unless ``model`` given), score the match's players, gate, guard; returns ``(labels, dead, fp)``."""
+def apply(labels, match, model=None, check=True):
+    """Train (unless ``model`` given), score the match's players, gate, guard; returns ``(labels, dead, fp)``.
+
+    ``check=False`` skips the BAR-ATH-calibrated build guard while keeping the label path identical
+    (the dev harness uses it: some dev cells legitimately add no gated D, e.g. v=0).
+    """
     mdl, cols = model or build_model()
     pf = frame_pd(mdl, cols, match.P, match.V, match.T, match.half)
     out, dead = gate(labels, match.B, match.half, pf)
-    return out, dead, check_footprint(footprint(labels, out, match.half))
+    fp = footprint(labels, out, match.half)
+    return out, dead, (check_footprint(fp) if check else fp)

@@ -2,7 +2,7 @@
 
 Baseline+ persists the pre-gap owner through every ball-missing gap, so a hand-over that happens
 inside a gap is invisible and one that is seen is placed at the gap end. Inside each ball-missing run
-of at least ``MIN_GAP`` frames this module re-decodes the frames labelled H/A with a 2-state HMM over
+of at least ``MIN_GAP`` frames this module re-decodes the frames labeled H/A with a 2-state HMM over
 the ball-free P(home has the ball) of :mod:`possession.ballfree` (5 Hz): emissions are log P(team),
 the entry state is pinned to the label before the gap and the exit state to the label after it, and
 a switch costs ``LAM`` nats. ``LAM = ln(mean H/A spell in 5 Hz steps)`` comes from the R08 Gamma prior
@@ -138,10 +138,15 @@ def check_footprint(fp, max_share=MAX_CHANGED_SHARE):
     return fp
 
 
-def apply(labels, B, half, ph, dead=None, enabled=None, lam=LAM, min_gap=MIN_GAP):
-    """Flag-gated entry point: returns ``labels`` unchanged when disabled; else gapdec + footprint guard."""
+def apply(labels, B, half, ph, dead=None, enabled=None, lam=LAM, min_gap=MIN_GAP, check=True):
+    """Flag-gated entry point: returns ``labels`` unchanged when disabled; else gapdec + footprint guard.
+
+    ``check=False`` skips the BAR-ATH-calibrated build guard, keeping the label path identical
+    (dev harness only).
+    """
     if not (ENABLED if enabled is None else enabled):
         return labels
     out = gapdec(labels, B, half, ph, lam=lam, min_gap=min_gap)
-    check_footprint(footprint(labels, out, B, half, dead))
+    if check:
+        check_footprint(footprint(labels, out, B, half, dead))
     return out

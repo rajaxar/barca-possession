@@ -64,9 +64,14 @@ def check_footprint(fp):
     return fp
 
 
-def apply(labels, gated, match, pf, fired=None, enabled=None):
-    """Flag-gated entry point. Returns ``(labels, footprint or None)``."""
+def apply(labels, gated, match, pf, fired=None, enabled=None, check=True):
+    """Flag-gated entry point. Returns ``(labels, footprint or None)``.
+
+    ``check=False`` skips the BAR-ATH-calibrated build guard, keeping the label path identical
+    (dev harness only).
+    """
     if not (ENABLED if enabled is None else enabled):
         return labels, None
     out = overlay(labels, gated, match.B, match.half, pf)
-    return out, check_footprint(footprint(labels, out, match.half, fired))
+    fp = footprint(labels, out, match.half, fired)
+    return out, (check_footprint(fp) if check else fp)

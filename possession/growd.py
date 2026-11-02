@@ -2,8 +2,8 @@
 
 E47 anchor: a tracked ball that rests (0.5 s-baseline speed <= 1 m/s for >= 1 s) while the players are
 slow (team mean speed < ``G``) and no plausible keeper is within ``VETO_M`` is a dead ball. Such a
-resting moment is only the visible part of a stoppage, so each anchor run is grown backwards and forwards
-until the stoppage ends: the ball leaves ``R_M`` metres of its rest point, the team mean speed reaches
+resting moment is only the visible part of a stoppage, so each anchor run is grown backward and forward
+until the stoppage ends: the ball leaves ``R_M`` meters of its rest point, the team mean speed reaches
 ``S_JUMP`` (sprint / restart), the team stays >= ``S_HI`` for ``H_F`` frames, or the ball runs faster than
 ``S_BALL`` while the team is >= ``S_HI`` (both move). Each side grows at most ``CAP_S`` seconds. Frames with the
 ball missing or a NaN speed are 'ok'. Grown frames become D and H/A islands shorter than ``ABSORB``
@@ -31,8 +31,18 @@ S_BALL = 3.0                     # both-move stop: ball faster than this while t
 H_F = 25                         # hysteresis frames
 HOLD_F = int(round(dproxy.MIN_HOLD_S * FPS))
 ABSORB = dgate.ABSORB
-MAX_D_SHARE_ADDED = 0.029        # guard: E65 measured +2.90 pp at R25 (gated analogue)
-MIN_D_SHARE_ADDED = 0.005        # ... and a dead rule is as suspect as a runaway one
+# Guard, re-derived on the D-028 stack (B01, BAR-ATH): the grown mask covers 7.55% of graded, but only
+# 2.85% of graded was live input, and growd changed 4,599 frames = 1.016x that eligible set (72 frames
+# came from absorbing small islands).  The old absolute D-share bound (.029 vs measured .02895) was a
+# zero-margin canary that any upstream D change would trip — and it cannot be shared with dev, where the
+# same rule legitimately adds 0.15-12.6% of graded.  So the canary is now relative to growd's own
+# footprint: changed frames <= 1.10x the graded mask frames the input left live, and the mask itself
+# within [MIN_MASK_SHARE, MAX_MASK_SHARE].  MAX_D_SHARE_ADDED remains only as a runaway cap (dev max
+# 12.6%, BAR-ATH 2.90%).
+MAX_MASK_SHARE = 0.30            # runaway bound on growd's own grown mask (share of graded; BAR-ATH .0755)
+MIN_MASK_SHARE = 0.001           # a dead rule is as suspect as a runaway one (dev min .0020)
+MAX_CHANGED_PER_ELIGIBLE = 1.10  # changed / (mask & graded & input != D): BAR-ATH 1.016 (+8% headroom)
+MAX_D_SHARE_ADDED = 0.20         # absolute runaway cap only (BAR-ATH .02895, dev max .126)
 MAX_FLICKER_ADDED = 5            # spells < 1 s added (E65: +3 at R25)
 
 
@@ -126,16 +136,27 @@ def grown_mask(match, r=R_M, cap_s=CAP_S):
     return grow(pre, anchor(pre), r, cap_s)
 
 
-def footprint(before, after, half, dead=None):
-    """Label-free change footprint over graded frames: D share added, spells < 1 s added, changes inside ``dead``."""
+def footprint(before, after, half, dead=None, mask=None):
+    """Label-free change footprint over graded frames: D share added, spells < 1 s added, changes inside ``dead``.
+
+    ``mask`` (the grown mask) adds the relative guard fields: the mask's own share of graded and the
+    changed/mask-eligible ratio, which do not move when an upstream stage changes the D share.
+    """
     before, after = np.asarray(before), np.asarray(after)
     graded = np.asarray(half) > 0
     n = max(1, int(graded.sum()))
     chg = (before != after) & graded
-    return dict(graded=int(graded.sum()), changed=int(chg.sum()), changed_share_graded=float(chg.sum()) / n,
-                d_added_share_graded=float(((after == "D") & graded).sum() - ((before == "D") & graded).sum()) / n,
-                flickers_added=_flickers(after, half) - _flickers(before, half),
-                changed_in_dead=int((chg & dead).sum()) if dead is not None else None)
+    fp = dict(graded=int(graded.sum()), changed=int(chg.sum()), changed_share_graded=float(chg.sum()) / n,
+              d_added_share_graded=float(((after == "D") & graded).sum() - ((before == "D") & graded).sum()) / n,
+              flickers_added=_flickers(after, half) - _flickers(before, half),
+              changed_in_dead=int((chg & dead).sum()) if dead is not None else None)
+    if mask is not None:
+        m = np.asarray(mask) & graded
+        elig = m & (before != "D")
+        fp.update(mask_graded=int(m.sum()), mask_share_graded=float(m.sum()) / n,
+                  eligible=int(elig.sum()),
+                  changed_over_eligible=float(chg.sum()) / max(1, int(elig.sum())))
+    return fp
 
 
 def _flickers(labels, half):
@@ -154,10 +175,16 @@ def _flickers(labels, half):
 
 def check_footprint(fp):
     """Raise on a runaway or dead rule, on added flickers, or on any change inside an E25 dead gap."""
+    if "mask_share_graded" in fp:
+        if not MIN_MASK_SHARE <= fp["mask_share_graded"] <= MAX_MASK_SHARE:
+            raise RuntimeError("growd's grown mask covers %.4f of graded frames, outside [%.3f, %.2f]"
+                               % (fp["mask_share_graded"], MIN_MASK_SHARE, MAX_MASK_SHARE))
+        if fp["changed_over_eligible"] > MAX_CHANGED_PER_ELIGIBLE:
+            raise RuntimeError("growd changed %.4f of its own eligible mask frames (> %.2f)"
+                               % (fp["changed_over_eligible"], MAX_CHANGED_PER_ELIGIBLE))
     s = fp["d_added_share_graded"]
-    if not MIN_D_SHARE_ADDED <= s <= MAX_D_SHARE_ADDED:
-        raise RuntimeError("growd added D to %.4f of graded frames, outside [%.3f, %.3f]"
-                           % (s, MIN_D_SHARE_ADDED, MAX_D_SHARE_ADDED))
+    if not 0.0 <= s <= MAX_D_SHARE_ADDED:
+        raise RuntimeError("growd added D to %.4f of graded frames (> %.2f)" % (s, MAX_D_SHARE_ADDED))
     if fp["flickers_added"] > MAX_FLICKER_ADDED:
         raise RuntimeError("growd added %d spells < 1 s (> %d)" % (fp["flickers_added"], MAX_FLICKER_ADDED))
     if fp["changed_in_dead"]:
@@ -165,12 +192,17 @@ def check_footprint(fp):
     return fp
 
 
-def apply(labels, match, dead=None, enabled=None, r=None):
-    """Flag-gated entry point: ``labels`` must be D-gated. Returns ``(labels, footprint or None)``."""
+def apply(labels, match, dead=None, enabled=None, r=None, check=True):
+    """Flag-gated entry point: ``labels`` must be D-gated. Returns ``(labels, footprint or None)``.
+
+    ``check=False`` skips the BAR-ATH-calibrated build guard, keeping the label path identical
+    (dev harness only).
+    """
     if not (ENABLED if enabled is None else enabled):
         return labels, None
     mask = grown_mask(match, R_M if r is None else r)
     out = np.asarray(labels).copy()
     out[mask] = "D"
     out = dgate.absorb_islands(out, ABSORB)
-    return out, check_footprint(footprint(labels, out, match.half, dead))
+    fp = footprint(labels, out, match.half, dead, mask=mask)
+    return out, (check_footprint(fp) if check else fp)

@@ -112,12 +112,23 @@ class Guard(unittest.TestCase):
         base = dict(d_added_share_graded=0.02, flickers_added=0, changed_in_dead=0)
         return dict(base, **kw)
 
-    def test_bounds(self):
+    def test_absolute_runaway_cap(self):
         self.assertTrue(growd.check_footprint(self.fp()))
-        for bad in (dict(d_added_share_graded=0.05), dict(d_added_share_graded=0.0),
+        for bad in (dict(d_added_share_graded=0.25), dict(d_added_share_graded=-0.01),
                     dict(flickers_added=growd.MAX_FLICKER_ADDED + 1), dict(changed_in_dead=3)):
             with self.assertRaises(RuntimeError):
                 growd.check_footprint(self.fp(**bad))
+
+    def test_relative_guard_on_own_mask(self):
+        """The canary is growd's own footprint, so upstream D changes cannot trip it."""
+        base = dict(d_added_share_graded=0.02, flickers_added=0, changed_in_dead=0,
+                    mask_graded=1200, mask_share_graded=0.0755, eligible=450, changed_over_eligible=1.016)
+        self.assertTrue(growd.check_footprint(base))
+        for bad in (dict(mask_share_graded=growd.MAX_MASK_SHARE + 0.01),
+                    dict(mask_share_graded=growd.MIN_MASK_SHARE / 2),
+                    dict(changed_over_eligible=growd.MAX_CHANGED_PER_ELIGIBLE + 0.01)):
+            with self.assertRaises(RuntimeError):
+                growd.check_footprint(dict(base, **bad))
 
     def test_footprint_counts_added_d_flickers_and_dead(self):
         before = np.array(["H"] * 100 + ["A"] * 100)
@@ -132,6 +143,12 @@ class Guard(unittest.TestCase):
         self.assertAlmostEqual(fp["d_added_share_graded"], 0.1)
         self.assertEqual(fp["flickers_added"], 0)
         self.assertEqual(fp["changed_in_dead"], 1)
+        mask = np.zeros(200, bool)
+        mask[40:50] = True
+        fp = growd.footprint(before, after, half, dead, mask=mask)
+        self.assertEqual(fp["mask_graded"], 10)
+        self.assertEqual(fp["eligible"], 10)              # input is H there
+        self.assertAlmostEqual(fp["changed_over_eligible"], 2.0)   # mask + the second D run
         after[10:20] = "D"; after[20:30] = "A"
         after[30:35] = "H"                                    # a 5-frame H spell inside: new flicker
         self.assertGreaterEqual(growd.footprint(before, after, half)["flickers_added"], 1)
