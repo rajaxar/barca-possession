@@ -11,12 +11,16 @@ label-only rules that trade those two errors:
   :func:`x_low_conf`      write X near uncertain hand-overs (acts as lag; measured, not recommended)
   :func:`diagnose`        label-free spell / D-length summary used by the E14 curves
 
-E14 verdict (research/E14_result.md): only the short-spell floor pays.  On dev-v1 the shipped
-labels carry 474 H/A spells under 1.5 s per 10 games and the scorer's own matcher gives a TP to
-**2** of them, so the floor is pruning spells that cannot match; absorbing each to D (``absorb=
-"to_d"``, 38 frames) is +.0099 spellF1 [.0063,.0138], 0/10 games negative, positive at +-0.5 s.
-Absorbing to a neighbor instead, merging short D runs, writing X on short D and X at low-confidence
-hand-overs were all flat or negative (details and K in the result).
+E14 verdict (research/E14_result.md; mechanism corrected in E99): only the short-spell floor pays.
+On dev the pre-floor labels carry 464 H/A spells under 1.5 s per 10 games, and the scorer's own
+matcher credits **84** of them at IoU >= .3 (43 at .5) -- about **18%**, not 0.4% (10.6% on the
+20 held-out SkillCorner games, E88).  The floor is therefore a **precision/recall trade**, not free
+pruning: absorbing each to D (``absorb="to_d"``, 38 frames) removes roughly **380 false positives**
+for roughly **84 real short possessions deleted**, and is +.0099 spellF1 [.0063,.0138] on the
+pre-add-on stack (+.0113 on the current labels, E99), 0/10 games negative, positive at +-0.5 s.
+``to_d`` is chosen because it keeps the two host spells separate rather than joining them; absorbing
+to a neighbor instead, merging short D runs, writing X on short D and X at low-confidence hand-overs
+were all flat or negative (details and K in the result).
 
 Everything is applied inside the supplied graded runs (the two halves), never across the half-time
 hole and never outside a run; X written in a run is left for the scorer to forward-fill.  Rules are
@@ -40,8 +44,8 @@ LIVE = (0, 1)
 # not go higher.  D merging is off (max_d=0): every merge variant was flat (see the result).
 DEFAULT = dict(min_spell=38, absorb="to_d", max_d=0, merge_same_team_only=True)
 
-# Switch (same convention as growd/subgap): tier 1 in E14 (D-010), so the default is on.  Nothing
-# calls this module yet; see research/E14_result.md for the exact line the pipeline owner adds.
+# Switch (same convention as growd/subgap): tier 1 in E14 (D-010), so the default is on.  This is the
+# last label write in ``pipeline.build_labels`` (D-029); research/E14_result.md has the mechanism.
 ENABLED = True
 
 
@@ -133,7 +137,8 @@ def absorb_short(labels, runs, min_frames=DEFAULT["min_spell"], absorb=DEFAULT["
     ``absorb`` decides the target color:
       ``longest_live``  longest adjacent H/A neighbor, else D (Baseline+'s rule);
       ``longest``       longest adjacent segment of any color (D competes on length);
-      ``to_d``          always D;
+      ``to_d``          always D, the shipping policy: it keeps the two host spells
+                        separate rather than joining them (E14/E99);
       ``prev``/``next`` previous/next adjacent segment (D if none, or at a run edge).
     A spell at a run edge has only one neighbor.  If no neighbor exists the spell becomes D.
     ``same_neighbors`` restricts the rule to spells flanked by the same team (the pure flicker case);
