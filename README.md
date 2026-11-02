@@ -50,9 +50,12 @@ found (see `possession/config.py`).
 
     make submission        # writes outputs/submission.csv with the frozen D-028 stack
     make validate          # ...and runs the organizer validator on it
+    make freeze-check      # asserts the D-029 freeze: two builds, sha, validator, shape, rules guard, number manifest
     make test
 
 or `python -m possession.make_submission --out outputs/submission.csv`.
+
+`make freeze-check` is the one-command audit of the frozen artifact: it builds twice, compares the files byte for byte, checks the sha256 `ee7b5b6b…46d8`, runs the organizer validator, counts 370 spells / 138 D stretches / 40,462 X, runs `tests.test_rules_guard` and the walkthrough number manifest (`--check`), and prints the commit, sha and counts. It fails loudly on any mismatch and never repairs one. A HEAD ahead of the local tag `final-candidate` is only a warning, because a docs-only follow-up is allowed while the rebuilt CSV keeps the frozen sha.
 
 Baseline+ persists the last near-ball owner's team through gaps, confirms changes with hysteresis,
 marks debounced out-of-bounds intervals dead until ball movement signals a restart, applies the
