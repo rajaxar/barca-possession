@@ -155,9 +155,11 @@ Re-decoding inside those gaps instead of overlaying was negative in 24 of 24 var
 
 ## 6. Possessions shorter than 1.5 seconds are pruned to `D`
 
-This is a scoring rule, not a claim about football. A spell under 1.5 seconds is almost never matched
-to a real possession, and deleting it removes a false positive without joining the two possessions
-around it. We turn it into `D`, never into the neighboring team.
+This is a scoring rule, not a claim about football. A spell under 1.5 seconds is much more often a false
+positive than a real possession, but not always: on the practice set about 18% of them do match a real
+possession, so the rule is a trade, not free pruning. It removes roughly 380 false positives at the cost
+of roughly 84 real short possessions, without joining the two possessions around it. We turn it into `D`,
+never into the neighboring team.
 
 *In the code:* `possession/postprocess.py::absorb_short(min_frames=38, absorb="to_d")`, applied by
 `postprocess.apply` as the last step of `build_labels` — one line, after the sub-gap rule, so it sees
@@ -165,11 +167,12 @@ the final labels. It works inside each half and never across the half-time hole.
 weaker version of the same rule built in (`baseline_plus.py::_merge_short`, 20 frames = 0.8 s,
 absorbed into the longest live neighbor or into `D`).
 
-*Why:* on the practice set 474 predicted possessions per 10 matches are under 1.5 seconds and the
-scorer's own matcher gives a true positive to 2 of them. Pruning them to `D` is +.0099 [.0063, .0138],
-positive in 10 of 10 matches and at both half-second answer shifts; absorbing them into a neighbor
-instead is worth .0059 less. It costs .0024 of frame-level score, which we accept because possessions
-are ranked and frames are not.
+*Why:* on the practice set 464 predicted possessions per 10 matches are under 1.5 seconds and the
+scorer's matcher credits 84 of them at IoU >= .3 (43 at .5). Turning them into `D` is +.0099 [.0063, .0138]
+on the pre-add-on stack and +.0113 on the shipped one, positive in 10 of 10 matches and at both half-second
+answer shifts; absorbing them into a neighbor instead is worth .0059 less. It costs .0024 of frame-level
+score, which we accept because possessions are ranked and frames are not. (An earlier draft of this
+section said the matcher credited only 2 of them; that was a diagnostic bug, corrected in E99.)
 
 ## 7. What we do not do
 

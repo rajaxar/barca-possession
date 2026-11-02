@@ -212,7 +212,7 @@ On the corrected practice data, averaged over the six main cells:
 
 The shipped entry is +.100 [.088, .113] over the organizers' 2-second baseline. The stoppage rule supplies +.073 of that, the in-gap decoder +.005, and the two add-ons about +.011 on top of the decoder alone. On our match we expect the stoppage rule to add +.06 to +.08 and the rest +.005 to +.012. The practice set is about .06 easier than the real match, so we trust the order of the methods, not the levels.
 
-One add-on tested on that set was dropped: splitting long stoppage blocks, −.0011. A short-spell floor worth +.010 on the practice set is measured and waiting for the final integration; it is not in the shipped file yet.
+One add-on tested on that set was dropped: splitting long stoppage blocks, −.0011. The short-spell floor is in the shipped entry: on the final stack it is worth +.0113 on the practice set, positive in 10 of 10 matches. It is a trade, not free pruning — it deletes about 84 real short possessions to remove about 380 false ones.
 
 The biggest weakness is possessions: we catch about 1 in 5 well enough to count. Following the ball more closely did not help. About 13.5% of changes of owner cannot be seen from positions, and our hand-overs often land more than a second from the real one.
 
