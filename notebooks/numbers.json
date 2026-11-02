@@ -1,0 +1,839 @@
+{
+  "entries": {
+    "all_frames": {
+      "command": "grep -n -m1 '199,319 rows' research/Q26_e66_repro.md",
+      "display": "199,319",
+      "recomputed": false,
+      "source": "research/Q26_e66_repro.md (validator)",
+      "tolerance": 0.0,
+      "value": 199319
+    },
+    "ball_in_play_min": {
+      "command": "grep -n -m1 'H 51,037' research/Q26_e66_repro.md",
+      "display": "58.3 min",
+      "recomputed": false,
+      "source": "research/Q26_e66_repro.md (validator counts)",
+      "tolerance": 0.0,
+      "value": 58.3
+    },
+    "ball_px": {
+      "command": "grep -n -m1 'ball is (8) to 10 pixels wide' solution/docs/WHAT_WE_TRIED.md",
+      "display": "8 px to 10 px",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 9.0
+    },
+    "baseline_plus_dev": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": ".3259",
+      "note": "Baseline+: nearest player within the radius, else hold, with hysteresis and merge.",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (reference_results)",
+      "tolerance": 5e-05,
+      "value": 0.3259
+    },
+    "baseline_plus_new": {
+      "command": "grep -n -m1 'Baseline\\+ \\.216 \u2192 (\\.326)' work/FINDINGS.md",
+      "display": ".326",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.326
+    },
+    "baseline_plus_old": {
+      "command": "grep -n -m1 '\\*\\*Baseline\\+ (\\.216) \u2192 \\.326' work/FINDINGS.md",
+      "display": ".216",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.216
+    },
+    "baseline_plus_over_smooth50": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": "+.0222 [+.0058, +.0403]",
+      "note": "games with a negative delta: 2/10",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (compare_dev_v1)",
+      "tolerance": 5e-05,
+      "value": 0.0222
+    },
+    "coupling_high": {
+      "command": "grep -n -m1 'cost \u22120\\.002 to \u2212(0\\.011)' solution/docs/WHAT_WE_TRIED.md",
+      "display": "\u2212.011",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": -0.011
+    },
+    "coupling_low": {
+      "command": "grep -n -m1 'cost \u2212(0\\.002) to \u22120\\.011' solution/docs/WHAT_WE_TRIED.md",
+      "display": "\u2212.002",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": -0.002
+    },
+    "crowd_lead": {
+      "command": "grep -n -m1 'crowd parks\\*\\* \\(lead (\\+\\.027)' work/FINDINGS.md",
+      "display": "+.027",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.027
+    },
+    "csv_sha8": {
+      "command": "grep -n -m1 'sha256' research/Q26_e66_repro.md",
+      "display": "8255d2d1\u20265e61",
+      "recomputed": false,
+      "source": "research/Q26_e66_repro.md (Q26 clean-clone build)",
+      "tolerance": 0.0,
+      "value": "8255d2d1"
+    },
+    "demo_iou2": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_iou2",
+      "display": "0.50",
+      "note": "IoU of one equal fragment against the whole true spell",
+      "recomputed": true,
+      "source": "synthetic labels (one true 250-frame spell)",
+      "tolerance": 1e-09,
+      "value": 0.5
+    },
+    "demo_iou3": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_iou3",
+      "display": "0.33",
+      "note": "IoU of one equal fragment against the whole true spell",
+      "recomputed": true,
+      "source": "synthetic labels (one true 250-frame spell)",
+      "tolerance": 1e-09,
+      "value": 0.332
+    },
+    "demo_iou4": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_iou4",
+      "display": "0.25",
+      "note": "IoU of one equal fragment against the whole true spell",
+      "recomputed": true,
+      "source": "synthetic labels (one true 250-frame spell)",
+      "tolerance": 1e-09,
+      "value": 0.248
+    },
+    "demo_iou_high": {
+      "command": "grep -n 'SPELL_IOUS' more-than-a-hack-2027/evaluation/possession_metrics.py",
+      "display": "0.7",
+      "note": "the score averages F1 over these IoU thresholds",
+      "recomputed": false,
+      "source": "the organizer's spellF1 band (SPELL_IOUS)",
+      "tolerance": 0.0,
+      "value": 0.7
+    },
+    "demo_iou_low": {
+      "command": "grep -n 'SPELL_IOUS' more-than-a-hack-2027/evaluation/possession_metrics.py",
+      "display": "0.3",
+      "note": "the score averages F1 over these IoU thresholds",
+      "recomputed": false,
+      "source": "the organizer's spellF1 band (SPELL_IOUS)",
+      "tolerance": 0.0,
+      "value": 0.3
+    },
+    "demo_missed": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_missed",
+      "display": ".00",
+      "note": "synthetic 10 s true H spell; this scenario only",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.0
+    },
+    "demo_perfect": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_perfect",
+      "display": "1.00",
+      "note": "synthetic 10 s true H spell; this scenario only",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 1.0
+    },
+    "demo_split2": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_split2",
+      "display": ".40",
+      "note": "synthetic 10 s true H spell; this scenario only",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.4
+    },
+    "demo_split3": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_split3",
+      "display": ".10",
+      "note": "synthetic 10 s true H spell; this scenario only",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.1
+    },
+    "demo_split4": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_split4",
+      "display": ".00",
+      "note": "synthetic 10 s true H spell; this scenario only",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.0
+    },
+    "e25_ci_high": {
+      "command": "grep -n -m1 '85\\.6% \\[80\\.8, (89\\.2)\\]' work/FINDINGS.md",
+      "display": "89.2%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.892
+    },
+    "e25_ci_low": {
+      "command": "grep -n -m1 '85\\.6% \\[(80\\.8), 89\\.2\\]' work/FINDINGS.md",
+      "display": "80.8%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.8079999999999999
+    },
+    "e25_dead_share": {
+      "command": "grep -n -m1 'flags \\*\\*(85\\.6%)' work/FINDINGS.md",
+      "display": "85.6%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.856
+    },
+    "e36_dead_share": {
+      "command": "grep -n -m1 'independent route puts \\*\\*(84\\.5%)' work/FINDINGS.md",
+      "display": "84.5%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.845
+    },
+    "eligible_dev": {
+      "command": "grep -n -m1 'vs (17)-44%' work/FINDINGS.md",
+      "display": "17% to 44%",
+      "note": "dev eligible share",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.305
+    },
+    "eligible_ours": {
+      "command": "grep -n -m1 'eligible pool (3\\.9%)' work/FINDINGS.md",
+      "display": "3.9%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.039
+    },
+    "expected_gate": {
+      "command": "grep -n -m1 'D gate: (\\+\\.06)\\.\\.\\+\\.08' research/E76_regrid.md",
+      "display": "+.06 to +.08",
+      "note": "expected on our match",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.07
+    },
+    "expected_grown": {
+      "command": "grep -n -m1 'We expect (\\+\\.001) to \\+\\.005 on our match' solution/docs/WHAT_WE_TRIED.md",
+      "display": "+.001 to +.005",
+      "note": "expected on our match",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.003
+    },
+    "expected_ingap": {
+      "command": "grep -n -m1 'Ingap: ~ (\\+\\.002)\\.\\.\\+\\.005' research/E76_regrid.md",
+      "display": "+.002 to +.005",
+      "note": "expected on our match",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.0035
+    },
+    "expected_postprocess": {
+      "command": "grep -n -m1 'expected (\\+\\.006)\\.\\.\\+\\.009' work/FINDINGS.md",
+      "display": "+.006 to +.009",
+      "note": "short-spell floor, not wired",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.0075
+    },
+    "expected_subgap": {
+      "command": "grep -n -m1 'We expect about (\\+\\.002) on our match' solution/docs/WHAT_WE_TRIED.md",
+      "display": "+.002",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.002
+    },
+    "flaw_target_auc": {
+      "command": "grep -n -m1 'target (\\.80) not met' work/FINDINGS.md",
+      "display": ".80",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.8
+    },
+    "flaw_texture_auc": {
+      "command": "grep -n -m1 'texture-only LOGO 1\\.000 \u2192 (\\.92)' work/FINDINGS.md",
+      "display": ".92",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.92
+    },
+    "flaw_texture_auc_heldout": {
+      "command": "grep -n -m1 'give texture (\\.907)' work/FINDINGS.md",
+      "display": ".907",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.907
+    },
+    "flip_recall_clean": {
+      "command": "grep -n -m1 'nearest-player cue catches \\*\\*(\\.764)\\*\\*' work/FINDINGS.md",
+      "display": ".764",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.764
+    },
+    "flip_recall_degraded": {
+      "command": "grep -n -m1 'vs \\*\\*(\\.482)\\*\\* on the degraded copy' work/FINDINGS.md",
+      "display": ".482",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.482
+    },
+    "fps": {
+      "command": "grep -n '^FPS' solution/possession/evaluate.py",
+      "display": "25 Hz",
+      "recomputed": true,
+      "source": "solution/possession/evaluate.py: FPS",
+      "tolerance": 0.0,
+      "value": 25
+    },
+    "gate_dev": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": ".3987",
+      "note": "Baseline+ and the missing-ball stoppage rule.",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (reference_results)",
+      "tolerance": 5e-05,
+      "value": 0.3987
+    },
+    "gate_over_baseline_plus": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": "+.0728 [+.0649, +.0808]",
+      "note": "games with a negative delta: 0/10",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (compare_dev_v1)",
+      "tolerance": 5e-05,
+      "value": 0.0728
+    },
+    "gate_pd_missing_high": {
+      "command": "grep -n -m1 'corrected P\\(D\\|missing\\) \\*\\*0\\.93-(0\\.99)' work/FINDINGS.md",
+      "display": ".99",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.99
+    },
+    "gate_pd_missing_low": {
+      "command": "grep -n -m1 'corrected P\\(D\\|missing\\) \\*\\*(0\\.93)' work/FINDINGS.md",
+      "display": ".93",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.93
+    },
+    "graded_frames": {
+      "command": "grep -n -m1 'H 51,037' research/Q26_e66_repro.md",
+      "display": "158,857",
+      "recomputed": false,
+      "source": "research/Q26_e66_repro.md (validator)",
+      "tolerance": 0.0,
+      "value": 158857
+    },
+    "grown_ci_high": {
+      "command": "grep -n -m1 'R25 cap30 \\| \\+\\.0055 \\[\\+\\.0159\\] \\| \\[\\.0044,(\\.0066)\\]' research/E76_regrid.md",
+      "display": ".0066",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.0066
+    },
+    "grown_ci_low": {
+      "command": "grep -n -m1 'R25 cap30 \\| \\+\\.0055 \\[\\+\\.0159\\] \\| \\[(\\.0044),' research/E76_regrid.md",
+      "display": ".0044",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.0044
+    },
+    "grown_delta": {
+      "command": "grep -n -m1 'E65 grown D, R25 cap30 \\| (\\+\\.0055)' research/E76_regrid.md",
+      "display": "+.0055",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.0055
+    },
+    "hmm_ci_high": {
+      "command": "grep -n -m1 '\\+\\.0084 \\[\u2212\\.0025,(\\+\\.0180)\\]' work/FINDINGS.md",
+      "display": "+.0180",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.018
+    },
+    "hmm_ci_low": {
+      "command": "grep -n -m1 '\\+\\.0084 \\[(\u2212\\.0025),\\+\\.0180\\]' work/FINDINGS.md",
+      "display": "\u2212.0025",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": -0.0025
+    },
+    "hmm_delta": {
+      "command": "grep -n -m1 'HMM (\\.4123), \\+\\.0084' work/FINDINGS.md",
+      "display": "+.0084",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.0084
+    },
+    "hsmm_ci_high": {
+      "command": "grep -n -m1 '\u2212\\.0090 \\[\u2212\\.0163,(\u2212\\.0024)\\]' work/FINDINGS.md",
+      "display": "\u2212.0024",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": -0.0024
+    },
+    "hsmm_ci_low": {
+      "command": "grep -n -m1 '\u2212\\.0090 \\[(\u2212\\.0163),\u2212\\.0024\\]' work/FINDINGS.md",
+      "display": "\u2212.0163",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": -0.0163
+    },
+    "hsmm_delta": {
+      "command": "grep -n -m1 '\\*\\*HSMM (\\.3949), \u2212\\.0090' work/FINDINGS.md",
+      "display": "\u2212.0090",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": -0.009
+    },
+    "ingap_new": {
+      "command": "grep -n -m1 'in-gap decoder \\+\\.0816 \u2192 (\\+\\.006)' work/FINDINGS.md",
+      "display": "+.006",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.006
+    },
+    "ingap_old": {
+      "command": "grep -n -m1 'in-gap decoder \\+\\.082 \u2192 (\\+\\.003\\.\\.\\+\\.016)' work/FINDINGS.md",
+      "display": "+.082",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.082
+    },
+    "ingap_over_gate": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": "+.0052 [+.0038, +.0065]",
+      "note": "games with a negative delta: 0/10",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (compare_dev_v1)",
+      "tolerance": 5e-05,
+      "value": 0.0052
+    },
+    "kick_recall_high": {
+      "command": "grep -n -m1 'Recall 75 to (83%) on clean data' solution/docs/WHAT_WE_TRIED.md",
+      "display": "83%",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.83
+    },
+    "kick_recall_low": {
+      "command": "grep -n -m1 'Recall (75) to 83% on clean data' solution/docs/WHAT_WE_TRIED.md",
+      "display": "75%",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.75
+    },
+    "missing_share_graded": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show missing_share_graded",
+      "display": "40.7%",
+      "note": "share of graded frames with no tracked ball",
+      "recomputed": true,
+      "source": "solution/possession/data.py (ball channel)",
+      "tolerance": 0.0001,
+      "value": 0.4069
+    },
+    "n_labels": {
+      "command": "grep -n 'three things' work/BIGPICTURE.md",
+      "display": "three",
+      "recomputed": false,
+      "source": "work/BIGPICTURE.md",
+      "tolerance": 0.0,
+      "value": 3
+    },
+    "nearest_radius_m": {
+      "command": "grep -n 'DEFAULT_PARAMS' solution/possession/baseline_plus.py",
+      "display": "2.5 m",
+      "recomputed": false,
+      "source": "solution/possession/baseline_plus.py DEFAULT_PARAMS",
+      "tolerance": 0.0,
+      "value": 2.5
+    },
+    "noise_band": {
+      "command": "grep -n -m1 'below about (0\\.04) on the full match' solution/docs/GLOSSARY.md",
+      "display": "0.04",
+      "recomputed": false,
+      "source": "solution/docs/GLOSSARY.md",
+      "tolerance": 0.0,
+      "value": 0.04
+    },
+    "ours_live_missing": {
+      "command": "grep -n -m1 'P\\(NaN\\|live\\) \\.43 \u2192 \\.044 \\(~(\\.03)\\)' work/FINDINGS.md",
+      "display": "~3%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.03
+    },
+    "ours_long_gap_live": {
+      "command": "grep -n -m1 'live share dev 35-39% vs (\u2264 ~4)%' work/FINDINGS.md",
+      "display": "\u2264 ~4%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.04
+    },
+    "panns_real": {
+      "command": "grep -n -m1 'real whistles at about (\\.001)' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".001",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.001
+    },
+    "panns_synthetic": {
+      "command": "grep -n -m1 'synthetic whistle tone at (\\.115)' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".115",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.115
+    },
+    "postprocess_ci_high": {
+      "command": "grep -n -m1 '\\[\\+\\.0063, \\+(\\.0138)\\]' research/E14_result.md",
+      "display": ".0138",
+      "recomputed": false,
+      "source": "research/E14_result.md",
+      "tolerance": 0.0,
+      "value": 0.0138
+    },
+    "postprocess_ci_low": {
+      "command": "grep -n -m1 '\\[\\+(\\.0063), \\+\\.0138\\]' research/E14_result.md",
+      "display": ".0063",
+      "recomputed": false,
+      "source": "research/E14_result.md",
+      "tolerance": 0.0,
+      "value": 0.0063
+    },
+    "postprocess_delta": {
+      "command": "grep -n -m1 '(\\+\\.0099) spellF1 \\[\\+\\.0063, \\+\\.0138\\]' research/E14_result.md",
+      "display": "+.0099",
+      "recomputed": false,
+      "source": "research/E14_result.md",
+      "tolerance": 0.0,
+      "value": 0.0099
+    },
+    "practice_easier": {
+      "command": "grep -n -m1 'about (\\.06) easier' solution/docs/HOW_WE_WORK.md",
+      "display": ".06",
+      "recomputed": false,
+      "source": "solution/docs/HOW_WE_WORK.md",
+      "tolerance": 0.0,
+      "value": 0.06
+    },
+    "practice_games": {
+      "command": "grep -n '10 games' work/DECISIONS.md",
+      "display": "10",
+      "recomputed": false,
+      "source": "work/DECISIONS.md D-022",
+      "tolerance": 0.0,
+      "value": 10
+    },
+    "practice_idsse": {
+      "command": "grep -n '7 IDSSE' work/DECISIONS.md",
+      "display": "seven",
+      "recomputed": false,
+      "source": "work/DECISIONS.md D-022",
+      "tolerance": 0.0,
+      "value": 7
+    },
+    "practice_live_missing": {
+      "command": "grep -n -m1 'P\\(NaN\\|live\\) \\.43 \u2192 (\\.044)' work/FINDINGS.md",
+      "display": "4.4%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.044
+    },
+    "practice_live_missing_old": {
+      "command": "grep -n -m1 'P\\(ball missing \\| live\\) dev (\\.42)' work/FINDINGS.md",
+      "display": "42%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.42
+    },
+    "practice_long_gap_live": {
+      "command": "grep -n -m1 'long-gap live share \\.35-\\.39 \u2192 (\\.021)' work/FINDINGS.md",
+      "display": "2.1%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.021
+    },
+    "practice_metrica": {
+      "command": "grep -n '3 Metrica' work/DECISIONS.md",
+      "display": "three",
+      "recomputed": false,
+      "source": "work/DECISIONS.md D-022",
+      "tolerance": 0.0,
+      "value": 3
+    },
+    "practice_missing_share": {
+      "command": "grep -n -m1 'missing share (\\.373) at primary' research/E76_regrid.md",
+      "display": "37.3%",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.373
+    },
+    "pred_d_runs": {
+      "command": "grep -n -m1 'D stretches 114' work/FINDINGS.md",
+      "display": "114",
+      "recomputed": false,
+      "source": "work/FINDINGS.md (E14)",
+      "tolerance": 0.0,
+      "value": 114
+    },
+    "pred_d_share_graded": {
+      "command": "grep -n -m1 'H 51,037' research/Q26_e66_repro.md",
+      "display": "45.0%",
+      "recomputed": false,
+      "source": "research/Q26_e66_repro.md (validator counts)",
+      "tolerance": 0.0,
+      "value": 0.4498
+    },
+    "pred_spells": {
+      "command": "grep -n -m1 'Final spells 414' research/Q26_e66_repro.md",
+      "display": "414",
+      "recomputed": false,
+      "source": "research/Q26_e66_repro.md",
+      "tolerance": 0.0,
+      "value": 414
+    },
+    "public_baseline2": {
+      "command": "grep -n -m1 'against (\\.326) for their 2-second baseline' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".326",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.326
+    },
+    "public_baseline5": {
+      "command": "grep -n -m1 'and (\\.424) for their 5-second one' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".424",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.424
+    },
+    "public_gt_spells": {
+      "command": "grep -n '17 GT spells' work/DECISIONS.md",
+      "display": "17",
+      "recomputed": false,
+      "source": "work/DECISIONS.md D-013",
+      "tolerance": 0.0,
+      "value": 17
+    },
+    "public_minutes": {
+      "command": "grep -n 'public 5 minutes' work/GUARDRAILS.md",
+      "display": "five",
+      "recomputed": false,
+      "source": "work/GUARDRAILS.md \u00a72",
+      "tolerance": 0.0,
+      "value": 5
+    },
+    "public_ship_macro": {
+      "command": "grep -n -m1 'Our frame-level score there is (\\.712)' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".712",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.712
+    },
+    "public_ship_spellf1": {
+      "command": "grep -n -m1 'the shipped entry scores (\\.456)' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".456",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.456
+    },
+    "restart_team_pp": {
+      "command": "grep -n -m1 'changed it by (\u22120\\.4) points' solution/docs/WHAT_WE_TRIED.md",
+      "display": "\u22120.4 points",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": -0.4
+    },
+    "shape_correct": {
+      "command": "grep -n -m1 'Correct (87%) of the time' solution/docs/WHAT_WE_TRIED.md",
+      "display": "87%",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.87
+    },
+    "ship_dev": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": ".4039",
+      "note": "The shipped file: gate then the in-gap decoder.",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (reference_results)",
+      "tolerance": 5e-05,
+      "value": 0.4039
+    },
+    "ship_over_smooth50": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": "+.1003 [+.0877, +.1130]",
+      "note": "games with a negative delta: 0/10",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (compare_dev_v1)",
+      "tolerance": 5e-05,
+      "value": 0.1003
+    },
+    "skillcorner_games": {
+      "command": "grep -n '20 games' work/DECISIONS.md",
+      "display": "20",
+      "recomputed": false,
+      "source": "work/DECISIONS.md D-022",
+      "tolerance": 0.0,
+      "value": 20
+    },
+    "smooth50_dev": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": ".3037",
+      "note": "The organizers' 2-second baseline (smooth50).",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (reference_results)",
+      "tolerance": 5e-05,
+      "value": 0.3037
+    },
+    "smooth50_match": {
+      "command": "grep -n -m1 'against (\\.243) on the real match' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".243",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.243
+    },
+    "split_delta": {
+      "command": "grep -n -m1 'E72 split D blocks \\| (-?\\.0011)' research/E76_regrid.md",
+      "display": "\u2212.0011",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": -0.0011
+    },
+    "subgap_ci_high": {
+      "command": "grep -n -m1 'E69 sub-gap gate overlay \\| \\+\\.0044 \\[\\+\\.0032\\] \\| \\[\\.0033,(\\.0056)\\]' research/E76_regrid.md",
+      "display": ".0056",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.0056
+    },
+    "subgap_ci_low": {
+      "command": "grep -n -m1 'E69 sub-gap gate overlay \\| \\+\\.0044 \\[\\+\\.0032\\] \\| \\[(\\.0033),' research/E76_regrid.md",
+      "display": ".0033",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.0033
+    },
+    "subgap_delta": {
+      "command": "grep -n -m1 'E69 sub-gap gate overlay \\| (\\+\\.0044)' research/E76_regrid.md",
+      "display": "+.0044",
+      "recomputed": false,
+      "source": "research/E76_regrid.md",
+      "tolerance": 0.0,
+      "value": 0.0044
+    },
+    "unresolvable_share": {
+      "command": "grep -n -m1 '~(13\\.5%) of all flips unresolvable' work/FINDINGS.md",
+      "display": "13.5%",
+      "recomputed": false,
+      "source": "work/FINDINGS.md",
+      "tolerance": 0.0,
+      "value": 0.135
+    },
+    "video_false": {
+      "command": "grep -n -m1 'fired on (82%) of frames' solution/docs/WHAT_WE_TRIED.md",
+      "display": "82%",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.82
+    },
+    "video_recall": {
+      "command": "grep -n -m1 'found it on (36%) of frames' solution/docs/WHAT_WE_TRIED.md",
+      "display": "36%",
+      "recomputed": false,
+      "source": "solution/docs/WHAT_WE_TRIED.md",
+      "tolerance": 0.0,
+      "value": 0.36
+    },
+    "visible_share_hi": {
+      "command": "grep -n -m1 'between 7% and (23%) of stoppages' solution/docs/HOW_WE_WORK.md",
+      "display": "23%",
+      "recomputed": false,
+      "source": "solution/docs/HOW_WE_WORK.md",
+      "tolerance": 0.0,
+      "value": 0.23
+    },
+    "visible_share_lo": {
+      "command": "grep -n -m1 'between (7%) and 23% of stoppages' solution/docs/HOW_WE_WORK.md",
+      "display": "7%",
+      "recomputed": false,
+      "source": "solution/docs/HOW_WE_WORK.md",
+      "tolerance": 0.0,
+      "value": 0.07
+    }
+  },
+  "generated_by": "solution/scripts/walkthrough_numbers.py",
+  "schema": 1,
+  "shipped_stack": "3a4e368"
+}

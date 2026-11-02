@@ -11,9 +11,12 @@ data/
 # outputs: submission CSVs are whole-match labels; keep the folder, not the files
 outputs/*
 !outputs/.gitkeep
-# ground truth of any kind (public GT included; it is fetched from the organiser repo, not copied)
+# ground truth of any kind (public GT included; it is fetched from the organizer repo, not copied)
 *_gt*.csv
 *_possession_gt*
+# walkthrough figures: anything rendered from tracking is local-only (D-002)
+notebooks/figs/
+
 # caches and environments
 __pycache__/
 *.py[cod]
