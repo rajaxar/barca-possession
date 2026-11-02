@@ -686,20 +686,20 @@
       "value": 5
     },
     "public_ship_macro": {
-      "command": "grep -n -m1 'Our frame-level score there is (\\.712)' solution/docs/WHAT_WE_TRIED.md",
-      "display": ".712",
+      "command": "grep -n -m1 'Our frame-level score there is \\*{0,2}(\\.[0-9]{3,4})' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".7199",
       "recomputed": false,
       "source": "solution/docs/WHAT_WE_TRIED.md",
       "tolerance": 0.0,
-      "value": 0.712
+      "value": 0.7199
     },
     "public_ship_spellf1": {
-      "command": "grep -n -m1 'the shipped entry scores (\\.456)' solution/docs/WHAT_WE_TRIED.md",
-      "display": ".456",
+      "command": "grep -n -m1 'the shipped entry scores \\*{0,2}(\\.[0-9]{3,4})' solution/docs/WHAT_WE_TRIED.md",
+      "display": ".4686",
       "recomputed": false,
       "source": "solution/docs/WHAT_WE_TRIED.md",
       "tolerance": 0.0,
-      "value": 0.456
+      "value": 0.4686
     },
     "restart_team_pp": {
       "command": "grep -n -m1 'changed it by (\u22120\\.4) points' solution/docs/WHAT_WE_TRIED.md",

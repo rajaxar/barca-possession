@@ -38,7 +38,7 @@ found (see `possession/config.py`).
 
 ## Run
 
-    make submission        # writes outputs/submission.csv with the deterministic E01 Baseline+
+    make submission        # writes outputs/submission.csv with the frozen D-028 stack
     make validate          # ...and runs the organizer validator on it
     make test
 

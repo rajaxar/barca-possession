@@ -112,9 +112,9 @@ stoppage ends: the ball leaves 25 m of its rest point, the team speed jumps, or 
 jogging speed for a second while the ball also moves. Each side grows at most 30 seconds.
 
 *In the code:* `possession/growd.py::anchor` and `::grow` (`R_M=25`, `CAP_S=30`), applied by
-`::apply` immediately after the gate. `check_footprint` fails the build if it adds less than 0.5% or
-more than 2.9% of graded frames as `D`, adds more than 5 possessions under a second, or touches a frame
-inside a gate-fired gap.
+`::apply` immediately after the gate. `check_footprint` fails the build if it changes more than 1.10x its
+own eligible frames (measured 1.016 on our match), adds more than 5 possessions under a second, or
+touches a frame inside a gate-fired gap; a 20% absolute cap on added `D` remains only as a runaway guard.
 
 *Why:* the anchor alone covers only about 3% of the stoppage it sits in, and using it alone lost in
 all seven variants tested. Grown frames are about 95% true stoppage, and the gain rises with the

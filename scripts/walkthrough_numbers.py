@@ -437,10 +437,10 @@ def _digest(m):
     m.e["crowd_lead"]["display"] = "+.027"
 
     # -- public sanity (report only)
-    one("public_ship_spellf1", "solution/docs/WHAT_WE_TRIED.md", r"the shipped entry scores (\.456)")
-    m.e["public_ship_spellf1"]["display"] = ".456"
-    one("public_ship_macro", "solution/docs/WHAT_WE_TRIED.md", r"Our frame-level score there is (\.712)")
-    m.e["public_ship_macro"]["display"] = ".712"
+    one("public_ship_spellf1", "solution/docs/WHAT_WE_TRIED.md", r"the shipped entry scores \*{0,2}(\.[0-9]{3,4})")
+    m.e["public_ship_spellf1"]["display"] = ".4686"
+    one("public_ship_macro", "solution/docs/WHAT_WE_TRIED.md", r"Our frame-level score there is \*{0,2}(\.[0-9]{3,4})")
+    m.e["public_ship_macro"]["display"] = ".7199"
     one("public_baseline2", "solution/docs/WHAT_WE_TRIED.md", r"against (\.326) for their 2-second baseline")
     m.e["public_baseline2"]["display"] = ".326"
     one("public_baseline5", "solution/docs/WHAT_WE_TRIED.md", r"and (\.424) for their 5-second one")
