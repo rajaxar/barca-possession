@@ -4,33 +4,43 @@ Anchors: work/DECISIONS.md D-029, work/cards/D05-freeze-final-configuration.md, 
 
     cd solution && make freeze-check
 
+For the B29 planted proof only, ``python scripts/freeze_check.py --only constant-provenance
+--provenance-root scratch/B29/planted`` runs that one check against a scratch tree.  It prints
+PARTIAL and is never a freeze verdict.
+
 Checks, in order:
 
 1. git identity -- HEAD, the local tag ``final-candidate`` and the files that differ.  A post-freeze
    ``HEAD`` is a **warning**, not a failure: D-029 allows a docs-only follow-up while the rebuilt
    CSV is still ``ee7b5b6b...46d8``, and the sha check below is the gate that decides.
-2. two independent ``possession.make_submission`` builds -- the first at the canonical
+2. ``scripts/constant_provenance.py --check`` (E113/B29): every module-level constant and every
+   string-keyed dict field in the shipped path carries exactly one provenance tag in
+   ``docs/constant_provenance.json``, no value has drifted from the register, and ``scaffold`` hides
+   no literal.  It runs before the builds, so a silent retune that leaves the CSV untouched fails in
+   about a tenth of a second instead of after three minutes.  A missing register is a clean skip:
+   the register is tracked, but a tree that ships only the build must still be checkable.
+3. two independent ``possession.make_submission`` builds -- the first at the canonical
    ``outputs/submission.csv``, the second in ``scratch/B18/`` -- compared byte for byte.
-3. sha256 of the rebuilt CSV equals the frozen value.
-4. the organizer validator says Valid with 199,319 rows (and its label counts agree with ours).
-5. 370 spells / 138 D stretches / 40,462 X, counted here from the CSV itself.
-6. ``tests.test_rules_guard`` (GUARDRAILS 1-3), no skips.
-7. ``scripts/walkthrough_numbers.py --check`` (the merged B22): a docs-only commit may not move a
+4. sha256 of the rebuilt CSV equals the frozen value.
+5. the organizer validator says Valid with 199,319 rows (and its label counts agree with ours).
+6. 370 spells / 138 D stretches / 40,462 X, counted here from the CSV itself.
+7. ``tests.test_rules_guard`` (GUARDRAILS 1-3) and ``tests.test_prose_guard``, no skips.
+8. ``scripts/walkthrough_numbers.py --check`` (the merged B22): a docs-only commit may not move a
    published number without the number manifest noticing.
-8. the keeper-exclusion contract on a tiny synthetic match (B25/B26): ``gk_possession`` imports, both
+9. the keeper-exclusion contract on a tiny synthetic match (B25/B26): ``gk_possession`` imports, both
    dproxy targets report it, a missing module raises ``MissingGkPossession``, and the explicit
    ``allow_missing=True`` opt-in records ``unavailable`` while vetoing nothing.
-9. the Q34 provenance statuses (the merged B27): a number report carries ``events_source``, the
-   adoption report carries ``base_rule_source``, and a reference log's git provenance is not
-   ``"unknown"`` -- so a broken install or a stale digest fails here, not only in a diagnostic.
-10. the numbers manifest's shape (B28): ``notebooks/numbers.json`` is tracked by git, holds only
-   numbers and strings (never an array -- a coordinate array is match data), and names only public
-   figures/placeholders or local-only paths under ``notebooks/figs/``.
-11. the public walkthrough page's publication audit (B28, the merged P04): if
-   ``notebooks/possession_walkthrough_public.html`` is present, all 13 checks must pass; if it is
-   absent the check is a clean skip, because the page is only built before a release (D-026).
-   The audit starts in its own process just before the validator and is joined here, so its ~2 s
-   cost is hidden behind checks 4-10; it never overlaps the two builds or the sha assertion.
+10. the Q34 provenance statuses (the merged B27): a number report carries ``events_source``, the
+    adoption report carries ``base_rule_source``, and a reference log's git provenance is not
+    ``"unknown"`` -- so a broken install or a stale digest fails here, not only in a diagnostic.
+11. the numbers manifest's shape (B28): ``notebooks/numbers.json`` is tracked by git, holds only
+    numbers and strings (never an array -- a coordinate array is match data), and names only public
+    figures/placeholders or local-only paths under ``notebooks/figs/``.
+12. the public walkthrough page's publication audit (B28, the merged P04): if
+    ``notebooks/possession_walkthrough_public.html`` is present, all 13 checks must pass; if it is
+    absent the check is a clean skip, because the page is only built before a release (D-026).
+    The audit starts in its own process just before the validator and is joined here, so its ~2 s
+    cost is hidden behind checks 5-11; it never overlaps the two builds or the sha assertion.
 
 A failure prints the specific mismatch (got X, the freeze says Y) and exits non-zero.  Nothing in
 this script edits a source file, the CSV or the manifest; ``outputs/submission.csv`` is only
@@ -123,7 +133,7 @@ def classify(path):
 
 def git_identity():
     """Print HEAD vs the freeze tag; warn (never fail) on a post-freeze HEAD."""
-    print("== 1/11 git identity")
+    print("== 1/12 git identity")
     if git("rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
         raise Failure("not a git checkout: the freeze record names a commit and tag, so the identity "
                       "cannot be checked. Run this from the `solution/` repository.")
@@ -170,9 +180,63 @@ def git_identity():
     return head, tag_commit, status
 
 
+def check_constants(root=None):
+    """E113/B29: the shipped constants and dict fields agree with their provenance register.
+
+    Delegates to ``scripts/constant_provenance.py --check`` so there is exactly one implementation of
+    the rule, shared with ``make test``.  It runs before the builds: a constant retune that changes
+    provenance without changing the CSV would otherwise pass every other check on this path.
+    """
+    print("== 2/12 constant provenance")
+    root = SOLUTION if root is None else os.path.abspath(root)
+    register = os.path.join(root, "docs", "constant_provenance.json")
+    if not os.path.isfile(register):
+        print("  skip provenance        register absent (%s); nothing to compare"
+              % os.path.relpath(register, root))
+        return
+    script = os.path.join(SOLUTION, "scripts", "constant_provenance.py")
+    if not os.path.isfile(script):
+        raise Failure("missing %s; without it the provenance register cannot be checked (E113)."
+                      % script)
+    os.makedirs(SCRATCH, exist_ok=True)
+    log = os.path.join(SCRATCH, "constant_provenance.log")
+    try:
+        out, elapsed = run([sys.executable, script, "--check", "--root", root],
+                           cwd=SOLUTION, log=log)
+    except Failure:
+        fails = []
+        if os.path.isfile(log):
+            with open(log, encoding="utf-8") as fh:
+                fails = [line[5:] for line in fh.read().splitlines() if line.startswith("FAIL ")]
+        if not fails:
+            raise  # the command itself failed; run() already carries its output tail
+        more = "" if len(fails) <= 12 else "\n  ... and %d more in %s" % (len(fails) - 12, log)
+        raise Failure(
+            "constant provenance does not match the register (%s):\n  %s%s\n"
+            "  Every shipped constant and every string-keyed dict field carries exactly one tag in\n"
+            "  %s. A retune that moves provenance without moving the CSV fails here instead of\n"
+            "  passing the sha. Update the register and docs/CONSTANTS.md, or revert the value; a\n"
+            "  constant is never justified by this match's answers."
+            % (os.path.relpath(register, SOLUTION), "\n  ".join(fails[:12]), more,
+               os.path.relpath(register, root)))
+
+    match = re.search(r"^constant provenance: (\d+) constants, (\d+) dict fields, (\d+) problem",
+                      out, re.M)
+    if not match:
+        raise Failure("constant_provenance.py --check printed no summary line:\n%s" % tail(out))
+    constants, fields, problems = (int(group) for group in match.groups())
+    if problems:
+        raise Failure("constant provenance: %d problem(s) but the check exited 0; refusing to pass."
+                      % problems)
+    if constants == 0:
+        raise Failure("constant provenance checked 0 constants; an empty scan is not a pass.")
+    print("  ok   provenance         %d constants, %d dict fields, %d problems (%.1f s)"
+          % (constants, fields, problems, elapsed))
+
+
 def build_twice():
     """Rebuild the submission twice and compare the bytes."""
-    print("== 2/11 two builds, byte-identical")
+    print("== 3/12 two builds, byte-identical")
     os.makedirs(SCRATCH, exist_ok=True)
     canonical = os.path.join(SOLUTION, "outputs", "submission.csv")
     second = os.path.join(SCRATCH, "build2.csv")
@@ -201,7 +265,7 @@ def build_twice():
 
 
 def check_sha(path, sha):
-    print("== 3/11 frozen sha256")
+    print("== 4/12 frozen sha256")
     if sha != FROZEN_SHA:
         raise Failure(
             "sha256 mismatch: the rebuilt CSV is %s\n"
@@ -216,7 +280,7 @@ def check_sha(path, sha):
 
 def check_validator(path):
     """Run the organizer's validator on the rebuilt CSV; assert Valid + 199,319 rows."""
-    print("== 4/11 organizer validator")
+    print("== 5/12 organizer validator")
     repo = os.path.abspath(os.environ.get(
         "MTAH_REPO_DIR", os.path.join(ROOT, "more-than-a-hack-2027")))
     validator = os.path.join(repo, "evaluation", "validate_submission.py")
@@ -281,7 +345,7 @@ def maximal_D_runs(labels):
 
 def check_counts(path):
     """Count spells / D stretches / X from the CSV itself (not from the manifest)."""
-    print("== 5/11 frozen shape")
+    print("== 6/12 frozen shape")
     labels = read_labels(path)
     expect("rows", len(labels), FROZEN_ROWS)
 
@@ -303,7 +367,7 @@ def check_counts(path):
 
 
 def check_rules_guard():
-    print("== 6/11 tests.test_rules_guard + tests.test_prose_guard")
+    print("== 7/12 tests.test_rules_guard + tests.test_prose_guard")
     out, elapsed = run([sys.executable, "-m", "unittest",
                         "tests.test_rules_guard", "tests.test_prose_guard"],
                        cwd=SOLUTION, log=os.path.join(SCRATCH, "rules_guard.log"))
@@ -321,7 +385,7 @@ def check_rules_guard():
 
 def check_numbers():
     """Merged B22: a post-freeze commit may not move a published number unnoticed."""
-    print("== 7/11 walkthrough number manifest")
+    print("== 8/12 walkthrough number manifest")
     script = os.path.join(SOLUTION, "scripts", "walkthrough_numbers.py")
     if not os.path.isfile(script):
         raise Failure("missing %s; the number manifest is the docs-drift gate (B22)." % script)
@@ -372,7 +436,7 @@ def check_keeper_contract():
     silently loses ``gk_possession`` this fails, instead of only a later diagnostic noticing. The
     check is a diagnostic contract only -- ``gk_possession`` stays out of the build (D-028/D-029).
     """
-    print("== 8/11 keeper exclusion contract")
+    print("== 9/12 keeper exclusion contract")
     import numpy as np
     from unittest import mock
 
@@ -434,7 +498,7 @@ def check_provenance():
     the adoption report names its ablation base rule, and a reference log names a real git commit
     (never ``unknown``). A broken install or stale digest fails the freeze instead of a diagnostic.
     """
-    print("== 9/11 provenance statuses")
+    print("== 10/12 provenance statuses")
     import numpy as np
     from unittest import mock
 
@@ -488,7 +552,7 @@ def _surfaces():
 
 def check_manifest_shape():
     """B28: the tracked number manifest holds numbers and strings, never an array of coordinates."""
-    print("== 10/11 numbers manifest shape")
+    print("== 11/12 numbers manifest shape")
     surfaces = _surfaces()
     try:
         report = surfaces.check_manifest()
@@ -509,7 +573,7 @@ def check_public_page(proc=None):
     ``proc`` is the audit process started just before the validator; joining it here hides the
     audit's ~2 s behind checks 4-10 without ever overlapping the two builds.
     """
-    print("== 11/11 public walkthrough page")
+    print("== 12/12 public walkthrough page")
     surfaces = _surfaces()
     try:
         report = surfaces.check_public_page(proc=proc)
@@ -523,13 +587,38 @@ def check_public_page(proc=None):
           % (report["checks"], surfaces.AUDIT_CHECKS, os.path.relpath(report["html"], SOLUTION)))
 
 
+def report_failure(error, title):
+    """Print a Failure the way the operator must read it; a partial run says so in the title."""
+    sys.stdout.flush()
+    print("\n%s FAILED" % title, file=sys.stderr)
+    for line in str(error).splitlines():
+        print("  " + line if line else "", file=sys.stderr)
+    print("\nNothing was repaired; the mismatch above is the finding.", file=sys.stderr)
+    return 1
+
+
 def main(argv=None):
     global SCRATCH
     ap = argparse.ArgumentParser(description="Assert the D-029 freeze; fail loudly, never repair.")
     ap.add_argument("--scratch", default=SCRATCH,
                     help="directory for the second build and logs (default: %(default)s)")
+    ap.add_argument("--only", choices=("constant-provenance",), default=None,
+                    help="run only this fast check and exit; for the B29 proof/debug, prints PARTIAL "
+                         "and is never a freeze verdict")
+    ap.add_argument("--provenance-root", default=None,
+                    help="with --only constant-provenance, check a scratch tree's modules and "
+                         "docs/constant_provenance.json instead of solution/")
     args = ap.parse_args(argv)
     SCRATCH = os.path.abspath(args.scratch)
+
+    if args.only:
+        print("PARTIAL freeze check -- only %r; this is not a freeze verdict." % args.only)
+        try:
+            check_constants(args.provenance_root)
+        except Failure as error:
+            return report_failure(error, "PARTIAL CHECK")
+        print("\nPARTIAL CHECK PASSED -- run `make freeze-check` for the freeze verdict")
+        return 0
 
     print("make freeze-check -- D-029 frozen artifact %s" % short(FROZEN_SHA))
     try:
@@ -545,6 +634,7 @@ def main(argv=None):
                           "refusing to call that a freeze check." % (imported, SOLUTION))
         print("  ok   import             %s" % imported)
 
+        check_constants()
         path, sha = build_twice()
         check_sha(path, sha)
         page_proc = _public_page_start()
@@ -557,12 +647,7 @@ def main(argv=None):
         check_manifest_shape()
         check_public_page(page_proc)
     except Failure as error:
-        sys.stdout.flush()
-        print("\nFREEZE CHECK FAILED", file=sys.stderr)
-        for line in str(error).splitlines():
-            print("  " + line if line else "", file=sys.stderr)
-        print("\nNothing was repaired; the mismatch above is the finding.", file=sys.stderr)
-        return 1
+        return report_failure(error, "FREEZE CHECK")
 
     print("\nFREEZE CHECK PASSED")
     print("  commit        %s%s" % (head, "" if head == tag_commit else
