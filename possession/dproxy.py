@@ -9,7 +9,8 @@ label-free target, with a decision rule written down before the test is run.
 TWO PROXIES, BECAUSE ONE BALL STATE CANNOT COVER D
 -------------------------------------------------
 ``proxy()`` needs the ball **missing**; ``present_ball()`` (E42) needs it **tracked and static**.
-On this match the ball is tracked on ~66% of true ``D`` frames (Q08), so the missing-ball proxy is
+On this match the ball is tracked on ~66% of true ``D`` frames in the report-only definitional
+check (Q08 — the window is atypical, so read the direction, not the rate), so the missing-ball proxy is
 blind to most dead time and the present-ball proxy sees a smaller, different slice. They are
 disjoint by construction (a frame cannot be both missing and present) and are meant to be used
 together: ``proxy=mode`` in :func:`adoption_report` and ``--proxy {missing,present,both}`` on the
@@ -53,9 +54,10 @@ Both thresholds are inherited, not fitted:
 
 KNOWN FAILURE MODES (with numbers, so nobody mistakes the proxy for a measurement)
 ----------------------------------------------------------------------------------
-1. **It is blind to the larger half of true D.** On the public window 66% of true ``D`` frames have
-   a tracked ball (Q08), and this match keeps the ball visible through most stoppages (ball on the
-   spot, rolling, held). Those frames are *never* in the proxy. So the proxy's recall on true D is
+1. **It is blind to the larger half of true D.** In the report-only definitional check 66% of true
+   ``D`` frames have a tracked ball (Q08), and this match keeps the ball visible through most
+   stoppages (ball on the spot, rolling, held). That check fixes the direction only — the window is
+   atypical and the rate is not usable. Those frames are *never* in the proxy. So the proxy's recall on true D is
    capped well below 1 and a cue whose value is "dead ball with the ball visible" (the referee
    whistle is exactly that: only ~6% of ball-out episodes have a whistle, R06) cannot be certified
    by a frame-agreement ablation against it. That is why the protocol's decision uses the *lead*
