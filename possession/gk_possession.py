@@ -223,7 +223,12 @@ def detect(match, st=None, events=None, params=None):
     structure` carries BAR-ATH's published half blocks and kickoffs, which are not valid elsewhere.
 
     Never raises on missing audio: the whistle gate simply contributes nothing (``ok=False`` in
-    :mod:`possession.audio` is handled by an empty array).
+    :mod:`possession.audio` is handled by an empty array). Because an empty event array means both
+    "audio was absent" and "no whistle was detected", ``info["events_source"]`` always records which
+    one it was -- ``"audio"``, the audio track's own failure token (``"no_ffmpeg"``, ``"no_video"``,
+    ``"audio_error"``, ...), ``"import_error"``, or ``"given"`` for a caller-supplied array -- and
+    ``info["n_events"]`` records how many events arrived (Q34). A reported episode count is only
+    comparable across runs when this source is the same.
     """
     p = dict(PARAMS, **(params or {}))
     if st is None:
@@ -231,9 +236,17 @@ def detect(match, st=None, events=None, params=None):
     if events is None:
         try:
             from . import audio
-            events = audio.whistle_events().events
+            track = audio.whistle_events()
+            events = track.events
+            events_source = "audio" if track.ok else str(track.reason or "audio_error")
+        except ImportError:
+            events = np.zeros(0)
+            events_source = "import_error"
         except Exception:
             events = np.zeros(0)
+            events_source = "audio_error"
+    else:
+        events_source = "given"
     n = len(match.B)
     half, graded, B = match.half, match.graded, match.B
     graded = graded & ~st.forced_dead_mask
@@ -352,6 +365,8 @@ def detect(match, st=None, events=None, params=None):
             release_ms=_release(B, e, n, rel_look),
             min_dist_m=float(np.nanmin(d[s:e, kt])) if np.isfinite(d[s:e, kt]).any() else np.nan))
     info = dict(n_episodes=len(episodes),
+                events_source=events_source,
+                n_events=int(len(events)),
                 n_seed_carry=int(sum(x["keep"] for x in seeds)),
                 n_seed_gathered=int(sum(x["keep"] for x in geps)),
                 n_gathered_accepted=int(sum(x["accepted"] for x in geps)),

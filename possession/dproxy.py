@@ -27,12 +27,15 @@ with ungraded frames and the published forced-D 2H pre-kickoff block never in th
 (``structure.forced_dead_mask``; both are D by structure, not by evidence).
 
 The exclusion is imported, never reimplemented: ``info["gk_source"]`` must read
-``"gk_possession"``. If that module cannot be **imported**, the missing-ball proxy falls back to a
-narrow inline gathered-branch copy under ``gk_source="inline"`` and the present-ball proxy applies
-no veto under ``gk_source="unavailable"`` -- in both cases it prints a ``WARNING [dproxy]`` line and
-stores the same text in ``info["gk_note"]``. A detector *bug* propagates instead of being
-substituted: swallowing every exception is how B10's array-end IndexError hid from these
-diagnostics. A consumer that uses the exclusion should assert the source.
+``"gk_possession"``. If that module cannot be **imported**, both proxies raise
+:class:`MissingGkPossession` -- there is no substitute. B21 measured the retired inline copy at
+**0 of the real detector's 1,252 exclusion frames** on BAR-ATH, so a fallback that silently returns
+an empty (or home-made) mask is worse than failing. A caller that deliberately wants to continue
+without the exclusion must pass ``allow_missing=True``; both proxies then apply no keeper veto,
+print a ``WARNING [dproxy]`` line, record ``gk_source="unavailable"`` and store the same text in
+``info["gk_note"]``. A detector *bug* propagates as well: swallowing every exception is how B10's
+array-end IndexError hid from these diagnostics. A consumer that uses the exclusion should assert
+the source.
 
 Both thresholds are inherited, not fitted:
 
@@ -244,11 +247,13 @@ MEASURED_AGREEMENT = dict(
 D_PROXY_PARAMS = dict(min_run_s=MIN_RUN_S, still_v=STILL_V, speed_clip=SPEED_CLIP,
                       run_gate="frame",          # "frame" = E15's dead-ish; "run" = whole-gap gate
                       exclude_gk=True,           # E38 keepers are live play, not D
+                      allow_missing=False,       # B25: opt-in to run with NO keeper exclusion
                       gk_include_gathered=True)  # only branch that can overlap a *missing* ball
 
 D_PRESENT_PARAMS = dict(min_hold_s=MIN_HOLD_S, ball_still_v=BALL_STILL_V, still_v=STILL_V,
                         speed_clip=SPEED_CLIP, near_player_m=NEAR_PLAYER_M, roll_v=ROLL_V,
                         base_s=BALL_BASE_S, exclude_gk=True,
+                        allow_missing=False,     # B25: opt-in to run with NO keeper exclusion
                         include_rolling=False)   # opt-in only; E36's live dribbles live there
 
 DProxy = namedtuple("DProxy", "mask runs missing_runs speed info")
@@ -323,49 +328,22 @@ def _graded_frames(match, st):
 # ================================================================ goalkeeper exclusion
 
 
-def _inline_gk(match, st, params):
-    """Minimal E38 *gathered-branch* fallback, used only if possession.gk_possession is missing.
+class MissingGkPossession(ImportError):
+    """The E38 keeper exclusion cannot be imported and the caller did not opt out.
 
-    TODO(S22): this duplicates gk_possession.detect's gathered branch and is deliberately narrow --
-    a short (<=6 s) ball-missing gap that starts within 2 m of a plausible keeper slot after
-    continuously tracked play and ends with a fast return. It is deliberately narrower than E38:
-    on BAR-ATH it found 0 of the real detector's 1,252 exclusion frames (B21), so it is a
-    degraded-exclusion fallback, not a replacement, and it always reports ``gk_source="inline"``.
-    The carry branch cannot overlap the proxy at all (the ball is present by construction), so it
-    is not reimplemented here.
+    Raised by :func:`proxy` and :func:`present_ball` when ``possession.gk_possession`` is missing.
+    Continuing without the exclusion is possible only with ``allow_missing=True``, which records
+    ``gk_source="unavailable"`` and a note, so no path can silently produce a zero-frame keeper
+    exclusion (B21: the retired inline copy found 0 of the real detector's 1,252 frames on BAR-ATH).
     """
-    n = len(match.B)
-    half, P, B = match.half, match.P, match.B
-    present = np.isfinite(B[:, 0])
-    out = np.zeros(n, bool)
-    for h in (1, 2):
-        for t in (0, 1):
-            s = int(match.gk[h - 1, t])
-            own = 0.0 if st.attack_dir[h - 1, t] > 0 else PITCH_L
-            xy = P[:, s]
-            ok = np.isfinite(xy[:, 0]) & (np.abs(xy[:, 0] - own) <= 45.0)
-            for a, b in _runs((half == h) & ~present):
-                dur = (b - a) / FPS
-                k = a - 1
-                if not (0.6 <= dur <= 6.0) or k < 0 or not ok[k] or not present[k]:
-                    continue
-                if np.linalg.norm(B[k] - xy[k]) > 2.0 or not present[max(0, k - 75):k + 1].all():
-                    continue
-                z = b
-                if z + 2 >= n or not present[z] or not present[z + 2]:
-                    continue
-                if np.linalg.norm(B[z + 2] - B[z]) / 2.0 >= 4.0:
-                    out[a:b] = True
-    out &= _graded_frames(match, st)
-    return out
 
 
-def _gk_fallback_note(target, exc, consequence):
-    """Loud, recorded notice that the keeper exclusion is not the real detector.
+def _gk_missing_note(target, exc, consequence):
+    """Loud, recorded notice that the keeper exclusion is absent by explicit opt-in.
 
-    Silent substitution is how B10's array-end bug hid: the proxy caught every exception and kept
-    returning an exclusion mask from a copy. A missing module is the only legitimate fallback, so
-    the fallback prints a status line and stores the same text in ``info["gk_note"]``.
+    Silent substitution is how B10's array-end bug hid. With ``allow_missing=True`` the caller has
+    asked for this, but the substitution still prints a status line and stores the same text in
+    ``info["gk_note"]`` so a consumer cannot mistake "no keeper evidence" for "no keeper possession".
     """
     note = ("%s keeper exclusion is NOT possession.gk_possession (%s: %s); %s"
             % (target, type(exc).__name__, exc, consequence))
@@ -379,22 +357,41 @@ def _import_gk():
     return gk_possession
 
 
-def _gk_live(match, st, params):
-    """(N,) bool of goalkeeper-in-possession frames, the source label and a fallback note.
+def _load_gk(params, target, consequence):
+    """(detector, None) on success; (None, note) only when ``allow_missing`` opts out; else raise.
 
-    E38's detector is the real thing; the inline fallback is only for a missing module and says so.
-    Any other exception from the detector (a bug, not an absent module) propagates: a silent inline
-    mask is exactly what hid B10's IndexError from the dev diagnostics.
+    A missing module is a hard error by default. The exception is an ImportError subclass with a
+    message that names the opt-in, so a diagnostic stops instead of quietly reporting a different
+    keeper mask.
+    """
+    try:
+        return _import_gk(), None
+    except ImportError as exc:
+        if not params.get("allow_missing", False):
+            raise MissingGkPossession(
+                "dproxy: the E38 keeper exclusion requires possession.gk_possession, which could "
+                "not be imported (%s: %s). Repair the install, or pass allow_missing=True to run "
+                "without any keeper exclusion -- that path records gk_source='unavailable' and a "
+                "note, and applies no veto." % (type(exc).__name__, exc)) from exc
+        return None, _gk_missing_note(
+            target, exc,
+            "continuing with allow_missing=True: no keeper veto is applied "
+            "(gk_source='unavailable'), so %s" % consequence)
+
+
+def _gk_live(match, st, params):
+    """(N,) bool of goalkeeper-in-possession frames, the source label and an opt-in note.
+
+    E38's detector is the only exclusion. A missing module raises unless ``allow_missing`` is set;
+    any other exception from the detector (a bug, not an absent module) always propagates.
     """
     if not params["exclude_gk"]:
         return np.zeros(len(match.B), bool), "disabled", None
-    try:
-        gk = _import_gk()
-    except ImportError as exc:
-        note = _gk_fallback_note(
-            "missing-ball", exc,
-            "falling back to the inline gathered-branch copy (gk_source='inline')")
-        return _inline_gk(match, st, params), "inline", note
+    gk, note = _load_gk(
+        params, "missing-ball",
+        "missing-ball proxy D candidates inside keeper possession are not vetoed")
+    if gk is None:
+        return np.zeros(len(match.B), bool), "unavailable", note
     gp = gk.detect(match, st, events=np.zeros(0),
                    params={"include_gathered": bool(params["gk_include_gathered"])})
     return np.asarray(gp.live) > 0, "gk_possession", None
@@ -604,15 +601,16 @@ def pitch_context(match, st):
 
 
 def _present_gk_live(match, st, p):
-    """E38 keeper-in-possession mask, imported (never reimplemented). Returns (mask, source, note)."""
+    """E38 keeper-in-possession mask, imported (never reimplemented). Returns (mask, source, note).
+
+    A missing module raises unless ``allow_missing`` is set (B25); there is no inline copy.
+    """
     if not p["exclude_gk"]:
         return np.zeros(len(match.B), bool), "disabled", None
-    try:
-        gk = _import_gk()
-    except ImportError as exc:  # no inline equivalent: the carry branch has no copy here
-        note = _gk_fallback_note(
-            "present-ball", exc,
-            "no keeper veto is applied (gk_source='unavailable'), so keeper-hold runs stay candidates")
+    gk, note = _load_gk(
+        p, "present-ball",
+        "keeper-hold runs stay present-ball D candidates")
+    if gk is None:
         return np.zeros(len(match.B), bool), "unavailable", note
     gp = gk.detect(match, st, events=np.zeros(0),
                    params={"include_gathered": True})   # gathered cannot fire: ball is present
@@ -934,9 +932,15 @@ def adoption_report(cue, match, proxy_obj=None, active_thr=None, n_boot=N_BOOT, 
     cond_lead = cond_inside - cond_before
 
     # ---- ablation: cue-free ball-state rule vs the same rule with the cue's after windows OR-ed in
+    # The base rule is the proxy's own object, so it must come from the proxy's info. A foreign or
+    # stale proxy object (e.g. an old pickle written before ``base_rule`` existed) has no such key;
+    # substituting the raw missing-ball mask changes ``ablation_delta``, so the source is recorded in
+    # the report and warned about rather than applied silently (Q34).
     base = np.asarray(proxy_obj.info.get("base_rule", missing), bool)
-    if len(base) != n:
+    base_source = "proxy_info"
+    if "base_rule" not in proxy_obj.info or len(base) != n:
         base = missing
+        base_source = "fallback_missing_mask"
     fused = base | after
     n_graded = max(1, int(graded.sum()))
     agree_base = float(np.sum((base == mask)[graded]) / n_graded)
@@ -1015,6 +1019,8 @@ def adoption_report(cue, match, proxy_obj=None, active_thr=None, n_boot=N_BOOT, 
         warnings.append("cue_had_nans_scored_as_zero")
     if n_blocks < 20:
         warnings.append("few_blocks_ci_fragile")
+    if base_source != "proxy_info":
+        warnings.append("ablation_base_rule_not_from_proxy_info")
 
     return dict(
         decision=decision, reason=reason, warnings=warnings,
@@ -1027,7 +1033,7 @@ def adoption_report(cue, match, proxy_obj=None, active_thr=None, n_boot=N_BOOT, 
         conditional_lead_gain=cond_lead, conditional_lead_ci=cond_ci,
         n_after_domain=n_after, n_before_domain=n_before,
         lead_ci=lead_ci, delta_ci=delta_ci,
-        ablation_delta=ablation, ablation_ci=abl_ci,
+        ablation_delta=ablation, ablation_ci=abl_ci, base_rule_source=base_source,
         agreement_masked=agree_base, agreement_fused=agree_fused,
         balanced_masked=_bal(base), balanced_fused=_bal(fused),
         target=dict(kind=kind, domain=domain_label,
@@ -1060,7 +1066,9 @@ def format_report(r):
             r["conditional_lead_gain"], r["conditional_inside"], r["conditional_before"],
             ci(r["conditional_lead_ci"])),
         "ablation {:+.4f}  {}  (masked agreement {:.4f}, fused {:.4f})".format(
-            r["ablation_delta"], ci(r["ablation_ci"]), r["agreement_masked"], r["agreement_fused"]),
+            r["ablation_delta"], ci(r["ablation_ci"]), r["agreement_masked"], r["agreement_fused"])
+        + ("  [base rule: %s]" % r["base_rule_source"] if r.get("base_rule_source") != "proxy_info"
+           else ""),
         "DECISION: {} ({}){}".format(r["decision"], r["reason"],
                                      "  warnings: " + ",".join(r["warnings"]) if r["warnings"] else ""),
     ])

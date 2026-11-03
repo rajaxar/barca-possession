@@ -187,7 +187,12 @@ class GoalkeeperExclusion(unittest.TestCase):
 
 
 class GkSourceContract(unittest.TestCase):
-    """B21: name the real detector, and never fall back silently."""
+    """B21/B25: name the real detector, and never substitute for it.
+
+    B25 deleted the inline gathered-branch copy: on BAR-ATH it found 0 of the real detector's 1,252
+    exclusion frames. A missing module is now a hard error; continuing without the exclusion is an
+    explicit ``allow_missing=True`` opt-in that records ``gk_source="unavailable"`` and a note.
+    """
 
     @staticmethod
     def _match():
@@ -207,28 +212,60 @@ class GkSourceContract(unittest.TestCase):
         with mock.patch.object(gk_possession, "detect", side_effect=spy):
             dp = dproxy.proxy(m, st, dict(exclude_gk=True))
             pb = dproxy.present_ball(m, st, dict(exclude_gk=True))
-        # Both proxies must report the imported module, not the inline copy / "unavailable".
+        # Both proxies must report the imported module, not a substitute.
         self.assertEqual(dp.info["gk_source"], "gk_possession")
         self.assertEqual(pb.info["gk_source"], "gk_possession")
         self.assertIsNone(dp.info["gk_note"])
         self.assertIsNone(pb.info["gk_note"])
         self.assertEqual(len(calls), 2)      # the real detect() ran once per proxy
 
-    def test_missing_module_falls_back_loudly_and_records_it(self):
+    def test_inline_fallback_is_gone(self):
+        # The copy must not exist, and neither proxy may opt out by default.
+        self.assertFalse(hasattr(dproxy, "_inline_gk"))
+        self.assertFalse(hasattr(dproxy, "_gk_fallback_note"))
+        self.assertIs(dproxy.D_PROXY_PARAMS["allow_missing"], False)
+        self.assertIs(dproxy.D_PRESENT_PARAMS["allow_missing"], False)
+
+    def test_missing_module_without_opt_in_raises(self):
+        m, st = self._match()
+        with mock.patch.object(dproxy, "_import_gk", side_effect=ImportError("no gk module")):
+            for fn in (dproxy.proxy, dproxy.present_ball):
+                with self.assertRaises(dproxy.MissingGkPossession) as ctx:
+                    fn(m, st, dict(exclude_gk=True))
+                msg = str(ctx.exception)
+                self.assertIn("possession.gk_possession", msg)
+                self.assertIn("no gk module", msg)     # the original cause is named
+                self.assertIn("allow_missing=True", msg)   # and the only way out is stated
+                self.assertIsInstance(ctx.exception, ImportError)
+
+    def test_missing_module_with_opt_in_records_unavailable(self):
         m, st = self._match()
         err = io.StringIO()
         with mock.patch.object(dproxy, "_import_gk", side_effect=ImportError("no gk module")), \
                 contextlib.redirect_stderr(err):
-            dp = dproxy.proxy(m, st, dict(exclude_gk=True))
-            pb = dproxy.present_ball(m, st, dict(exclude_gk=True))
-        self.assertEqual(dp.info["gk_source"], "inline")
-        self.assertEqual(pb.info["gk_source"], "unavailable")
-        self.assertIn("no gk module", dp.info["gk_note"])
-        self.assertIn("no gk module", pb.info["gk_note"])
+            dp = dproxy.proxy(m, st, dict(exclude_gk=True, allow_missing=True))
+            pb = dproxy.present_ball(m, st, dict(exclude_gk=True, allow_missing=True))
+        for info in (dp.info, pb.info):
+            self.assertEqual(info["gk_source"], "unavailable")
+            self.assertIn("no gk module", info["gk_note"])
+            self.assertIn("allow_missing=True", info["gk_note"])
+            self.assertIn("gk_source='unavailable'", info["gk_note"])
+            self.assertEqual(info["gk_frames"], 0)     # no exclusion was invented
+        # The opt-in really means "no veto": the keeper-free gap is proxy D again.
+        self.assertTrue(dp.mask[300:400].all())
+        self.assertEqual(dp.info["gk_vetoed"], 0)
+        self.assertEqual(pb.info["gk_vetoed"], 0)
         text = err.getvalue()
         self.assertIn("WARNING [dproxy]", text)
-        self.assertIn("gk_source='inline'", text)
         self.assertIn("gk_source='unavailable'", text)
+
+    def test_opt_in_does_not_bypass_a_working_detector(self):
+        # allow_missing is an escape hatch for a broken install, not a way to skip the exclusion.
+        m, st = self._match()
+        for fn in (dproxy.proxy, dproxy.present_ball):
+            info = fn(m, st, dict(exclude_gk=True, allow_missing=True)).info
+            self.assertEqual(info["gk_source"], "gk_possession")
+            self.assertIsNone(info["gk_note"])
 
     def test_detector_bug_is_not_swallowed(self):
         from possession import gk_possession

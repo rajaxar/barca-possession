@@ -89,7 +89,11 @@ Feat = namedtuple("Feat", "t c1 f1 c2 f2 crowd_db")
 # frame f is at t = f / 25 s (organizer convention: frame_id = video_frame + 1, R06 §1).
 Track = namedtuple("Track", "events ok reason video")
 # Soft evidence. p / log_odds are (N,) float32; gate / onset_frame are one value per event.
-Evidence = namedtuple("Evidence", "p log_odds gate onset_frame events gain")
+# ``source`` names where the whistle events came from ("given", "audio", or the audio track's own
+# failure token) so an all-zero evidence array cannot be read as "no whistle" when it is really
+# "no audio" (Q34). It defaults to "given" for the old 6-field construction.
+Evidence = namedtuple("Evidence", "p log_odds gate onset_frame events gain source")
+Evidence.__new__.__defaults__ = ("given",)
 
 EVENT_DTYPE = np.dtype([("start_frame", "i4"), ("end_frame", "i4"), ("peak_frame", "i4"),
                         ("dur_s", "f4"), ("f1_hz", "f4"), ("f2_hz", "f4"), ("sep_hz", "f4"),
@@ -711,9 +715,14 @@ def d_evidence(match, events=None, video=None, gain=LOG_ODDS_GAIN):
     gate = np.zeros(0, np.float32)
     onset = np.zeros(0, np.int32)
     if events is None:
-        events = whistle_events(video).events
+        track = whistle_events(video)
+        events = track.events
+        source = "audio" if track.ok else str(track.reason or "audio_error")
+    else:
+        source = "given"
     if len(events) == 0:
-        return Evidence(np.zeros(n, np.float32), np.zeros(n, np.float32), gate, onset, events, gain)
+        return Evidence(np.zeros(n, np.float32), np.zeros(n, np.float32), gate, onset, events, gain,
+                        source)
     speed = _mean_speed(match)
     missing = ~np.isfinite(match.B[:, 0])
     still = np.isfinite(speed) & (speed < STILL_SPEED_MS)
@@ -738,4 +747,4 @@ def d_evidence(match, events=None, video=None, gain=LOG_ODDS_GAIN):
     log_odds = np.clip(gain * weight, 0.0, LOG_ODDS_GAIN).astype(np.float32)
     p = (1.0 / (1.0 + np.exp(-log_odds.astype(np.float64)))).astype(np.float32)
     p[weight <= 0] = 0.0
-    return Evidence(p, log_odds, gate, onset, events, gain)
+    return Evidence(p, log_odds, gate, onset, events, gain, source)

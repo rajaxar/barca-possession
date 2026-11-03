@@ -6,7 +6,8 @@ Two kinds of entry:
   current submission's spell/D morphology, the synthetic spellF1 demonstration).  ``--check``
   rebuilds these and fails when one has moved beyond its recorded tolerance.
 * **read** -- an expensive result taken from a research digest.  The value is *parsed out of the
-  digest* (never typed into the notebook), and ``--check`` fails if the pattern no longer matches.
+  digest* (never typed into the notebook), and ``--check`` fails if the pattern no longer matches
+  **or if the parsed value has moved** (a corrected digest must regenerate the manifest, Q34).
 
 Each entry is ``{"value", "display", "source", "command", "recomputed", "tolerance"}``.
 The notebook builder substitutes ``{key}`` from this file, so no number in the prose is hand-typed.
@@ -725,8 +726,10 @@ def check(path, new):
         raise SystemExit("--check: keys changed (missing %s, extra %s)" % (missing, extra))
     bad = []
     for key, entry in new["entries"].items():
-        if not entry["recomputed"]:
-            continue
+        # Every entry is compared, not only the recomputed ones. A "read" entry is parsed out of a
+        # research digest; if that digest is corrected, the stored number is stale, and the notebook
+        # that substitutes from numbers.json would keep quoting the old figure. Checking only
+        # recomputed entries let that happen with `--check` still green (Q34).
         a, b = old[key]["value"], entry["value"]
         if isinstance(a, str) or isinstance(b, str):
             if a != b:
@@ -734,11 +737,14 @@ def check(path, new):
             continue
         a, b = float(a), float(b)
         if abs(a - b) > max(float(entry["tolerance"]), 1e-12):
-            bad.append("%s: stored %.6g, now %.6g (tol %g)" % (key, a, b, entry["tolerance"]))
+            where = "" if entry["recomputed"] else " (read: %s)" % entry.get("source", "?")
+            bad.append("%s%s: stored %.6g, now %.6g (tol %g)"
+                       % (key, where, a, b, entry["tolerance"]))
     if bad:
-        raise SystemExit("--check: recomputed values drifted:\n  " + "\n  ".join(bad))
-    print("numbers.json OK: %d keys, %d recomputed, no drift" % (
-        len(new["entries"]), sum(1 for e in new["entries"].values() if e["recomputed"])))
+        raise SystemExit("--check: stored numbers drifted:\n  " + "\n  ".join(bad))
+    print("numbers.json OK: %d keys (%d recomputed, %d read), no drift" % (
+        len(new["entries"]), sum(1 for e in new["entries"].values() if e["recomputed"]),
+        sum(1 for e in new["entries"].values() if not e["recomputed"])))
 
 
 def main(argv=None):
