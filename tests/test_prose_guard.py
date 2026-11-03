@@ -5,14 +5,14 @@ semantic checker.  A hit reports ``file:line``, the matched phrase, the fact to 
 card that retired the claim, so the fix is obvious.  Extend :data:`RULES` when a new claim is retired.
 
 Scope (shipped surface only): ``solution/**/*.py``, ``solution/docs/*.md``,
-``solution/notebooks/*.ipynb`` (figures are not scanned), ``work/HUMAN_NOTES.md`` and
+``solution/notebooks/*.ipynb`` (figures are not scanned) and
 ``research/Z01_final_report.md`` (the final report is prose the human will quote, and unlike the dated
 digests it carries no correction banners).
 ``research/*.md`` is deliberately not enforced: those are dated digests that quote withdrawn claims
 inside correction banners, so enforcing there would require the semantic reading this guard avoids.
 
 Exemptions, by path and pattern only:
-* both "Verbatim answers" blocks in ``work/HUMAN_NOTES.md`` -- the human's own words;
+* any "Verbatim answers" block in a scanned file -- quoted words are not ours to rewrite;
 * any ``>`` blockquote whose block says it is attributed to the human/observer.
 
 Needs no third-party package and reads text only.  Run with ``python -m unittest tests.test_prose_guard``.
@@ -28,7 +28,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SOLUTION = os.path.dirname(HERE)
 ROOT = os.path.dirname(SOLUTION)
 SELF = os.path.abspath(__file__)
-HUMAN_NOTES = os.path.join("work", "HUMAN_NOTES.md")
 Z01_REPORT = os.path.join("research", "Z01_final_report.md")
 
 # Retired claims.  pattern: regex; applies: optional predicate on the line (context that makes the
@@ -112,7 +111,7 @@ SCAN_GLOBS = [
     os.path.join("solution", "docs", "*.md"),
     os.path.join("solution", "notebooks", "*.ipynb"),
 ]
-EXTRA_FILES = [HUMAN_NOTES, Z01_REPORT]
+EXTRA_FILES = [Z01_REPORT]
 SKIP_PARTS = {"__pycache__", ".venv", ".git", ".cache", "possession.egg-info"}
 
 VERBATIM_HEADING = re.compile(r"^#{1,6}\s+.*verbatim", re.I)
@@ -182,7 +181,7 @@ def quote_block(lines, lineno):
 
 
 def is_exempt(relpath, lineno, line, lines, spans):
-    if relpath == HUMAN_NOTES and any(a <= lineno <= b for a, b in spans):
+    if any(a <= lineno <= b for a, b in spans):
         return True
     block = quote_block(lines, lineno)
     return bool(block and HUMAN_ATTRIBUTION.search(block))
@@ -190,7 +189,7 @@ def is_exempt(relpath, lineno, line, lines, spans):
 
 def scan_text(text, relpath="scratch/probe.md"):
     lines = text.splitlines()
-    spans = verbatim_spans(lines) if relpath == HUMAN_NOTES else []
+    spans = verbatim_spans(lines)
     hits = []
     for i, line in enumerate(lines, 1):
         if is_exempt(relpath, i, line, lines, spans):
@@ -280,19 +279,19 @@ class ProseGuardDetects(unittest.TestCase):
         # an unrelated probability is not the public-window number
         self.assertEqual(scan_text("rng.binomial(100, .456)"), [])
 
-    def test_human_verbatim_blocks_are_exempt(self):
-        with open(os.path.join(ROOT, HUMAN_NOTES), encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
+    def test_verbatim_blocks_are_exempt(self):
+        text = ("# notes\n\n## Verbatim answers\n\n**#1** -- 2 of 474 is what I saw.\n\n"
+                "## What I read out of them\n\nThis is not a quote, so 2 of 474 is flagged.\n")
+        lines = text.splitlines()
         spans = verbatim_spans(lines)
-        self.assertEqual(len(spans), 2, "expected both 'Verbatim answers' blocks, got {}".format(spans))
-        first = next(i for i, ln in enumerate(lines, 1) if "from the corner" in ln)
-        self.assertTrue(is_exempt(HUMAN_NOTES, first, lines[first - 1], lines, spans))
-        # the orchestrator's interpretation below the block is not the human's words
-        interp = next(i for i, ln in enumerate(lines, 1) if "Consistent with our model" in ln)
-        self.assertFalse(is_exempt(HUMAN_NOTES, interp, lines[interp - 1], lines, spans))
+        self.assertEqual(len(spans), 1, "expected one 'Verbatim answers' block, got {}".format(spans))
+        inside = next(i for i, ln in enumerate(lines, 1) if "what I saw" in ln)
+        self.assertTrue(is_exempt("fixture.md", inside, lines[inside - 1], lines, spans))
+        outside = next(i for i, ln in enumerate(lines, 1) if "not a quote" in ln)
+        self.assertFalse(is_exempt("fixture.md", outside, lines[outside - 1], lines, spans))
 
     def test_attributed_blockquote_is_exempt(self):
-        self.assertEqual(scan_text("> 2 of 474\n> -- the human, watch notes\n"), [])
+        self.assertEqual(scan_text("> 2 of 474\n> -- the observer, notes\n"), [])
         self.assertEqual(len(scan_text("> 2 of 474\n")), 1, "an unattributed quote must still be flagged")
 
     def test_reports_file_line_phrase_and_replacement(self):

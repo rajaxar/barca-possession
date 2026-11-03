@@ -119,8 +119,6 @@ Maps each checklist item in [WHAT_WE_TRIED.md](WHAT_WE_TRIED.md) to our internal
 
 | Item | Ids | Source |
 |---|---|---|
-| Clip watching, round 1 | S23 | work/HUMAN_NOTES.md, work/FINDINGS.md |
-| Clip watching, round 2 (in progress) | V08, D-019 | work/cards/V08-watch-round-2.md |
 | 40-situation audit and its killed ideas | I03 | research/I03_football_gaps.md, work/IDEAS.md |
 | Ball-in-play sanity band | I03, E69, D07 | research/I03_football_gaps.md, research/E69_short_hidden_d.md |
 
