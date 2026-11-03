@@ -23,6 +23,11 @@ calls the real :func:`possession.pipeline.build_labels`).
     cmp = dev_v1.compare_dev_v1(my_fn, "ship")          # either side: callable, builtin name or a saved result
     print(cmp)
 
+The D-interval view (:func:`d_interval_score`, :func:`compare_d_intervals`, S42) is a
+**diagnostic, never a selector** (D-022): spellF1 is the ranked objective. It answers "how many
+stoppages, how long, how well matched, and which edge moved", and E07 showed it can move opposite
+to spellF1 (the E66 add-ons lower interval F1 while raising spellF1). Never adopt a variant on it.
+
 Not imported by make_submission. Developer tooling only: reads external games, never the match.
 """
 import multiprocessing
@@ -317,9 +322,16 @@ def score_dev_v1(pred_fn, name="pred_fn", **kw):
 
 
 def reference_results(refresh=False, **kw):
-    """DevV1Result of the four built-in pipelines, cached on disk (delete or refresh=True after any change to them)."""
+    """DevV1Result of the four built-in pipelines, cached on disk (delete or refresh=True after any change to them).
+
+    A cache *hit* is logged, with the file and the code provenance, because the pickle carries scores
+    computed by whatever stage code wrote it: a rerun after a stage change silently reports the old
+    reference unless the cache is refreshed (Q34)."""
     p = os.path.join(_dir(), "reference_%s.pkl" % _stamp())
     if os.path.isfile(p) and not refresh:
+        print("dev_v1: reference cache HIT %s (scores from the code that wrote it; "
+              "refresh=True after a stage change)" % p, flush=True)
+        print(provenance(), flush=True)
         return pickle.load(open(p, "rb"))
     res = run_dev_v1(dict(STAGES), **kw)
     _atomic(p, lambda t: pickle.dump(res, open(t, "wb")))
@@ -445,4 +457,482 @@ def compare_dev_v1(a, b, n_jobs=4, include_clean=False, expect_path=None):
         "wins_at_each_shift": all(r["excludes_0"] and r["delta"] > 0 for r in out["shift"].values()),
         "v0_ci_low_ge_-.001": out["groups"]["v0_reference"]["ci"][0] >= -0.001,
     }
+    return out
+
+
+# -- D-interval diagnostic (S42) -----------------------------------------------------------------
+#
+# DIAGNOSTIC, NEVER A SELECTOR (D-022). spellF1 stays the ranked objective. This view exists to
+# say *what* the D blocks look like -- count, duration, match quality, and the signed position of
+# each edge -- because E07/E75 showed that interval numbers can move opposite to spellF1 (E66's
+# add-ons split long blocks and lower interval F1 while raising spellF1) and that the onset edge is
+# the expensive half. Never choose a variant on these numbers; use compare_dev_v1 for adoption.
+
+D_INTERVAL_NOTE = ("D-interval F1 is a stoppage-level diagnostic, never a selector (D-022). "
+                   "spellF1 is the ranked objective; use compare_dev_v1 for adoption.")
+
+
+def _runs_bool(mask):
+    """Half-open [start, stop) runs of a boolean mask."""
+    x = np.asarray(mask, np.int8)
+    return np.flatnonzero(np.diff(np.r_[0, x, 0])).reshape(-1, 2)
+
+
+def _is_d(labels):
+    """D mask from label strings (H/A/D/X) or organiser codes (2 = D)."""
+    lab = np.asarray(labels)
+    return (lab == 2) if lab.dtype.kind in "iu" else (lab == "D")
+
+
+def d_runs(labels, half, runs=None):
+    """Maximal runs of D (organiser code 2) inside the graded halves, clipped to ``runs``.
+
+    A run never crosses a half or a scored run boundary. ``runs`` is the scored set (dev-v1 passes
+    ``clean.runs``); ``None`` means every graded frame of each half. This is the interval set the
+    scorer uses, and the same extraction E07's ``variants.d_runs`` implemented.
+    """
+    lab = np.asarray(labels)
+    is_d = _is_d(lab)
+    half = np.asarray(half)
+    valid = None if runs is None else [(int(a), int(b)) for a, b in runs]
+    out = []
+    for h in (1, 2):
+        rows = np.flatnonzero(half == h)
+        if not rows.size:
+            continue
+        lo, hi = int(rows[0]), int(rows[-1]) + 1
+        for a, b in _runs_bool(is_d[lo:hi]):
+            a, b = int(a) + lo, int(b) + lo
+            if valid is None:
+                out.append((a, b))
+                continue
+            for va, vb in valid:
+                u, v = max(a, va), min(b, vb)
+                if v > u:
+                    out.append((u, v))
+    return np.asarray(out, np.int64).reshape(-1, 2)
+
+
+def _iou_match(pred, ref, iou=0.5):
+    """Greedy IoU matching, strongest pair first (E07's rule); returns [(pred_i, ref_j, iou)]."""
+    pred = np.asarray(pred, np.int64).reshape(-1, 2)
+    ref = np.asarray(ref, np.int64).reshape(-1, 2)
+    cand = []
+    for i, (a, b) in enumerate(pred):
+        for j, (c, d) in enumerate(ref):
+            u, v = max(int(a), int(c)), min(int(b), int(d))
+            if v > u:
+                score = (v - u) / float(max(int(b), int(d)) - min(int(a), int(c)))
+                if score >= iou:
+                    cand.append((score, i, j))
+    cand.sort(reverse=True)
+    up, ur, matches = set(), set(), []
+    for score, i, j in cand:
+        if i in up or j in ur:
+            continue
+        up.add(i)
+        ur.add(j)
+        matches.append((i, j, score))
+    return matches
+
+
+def _run_ends(labels):
+    """For every frame inside a D run, the end of that run (-1 outside D); E75's ownership trace."""
+    ends = np.full(len(labels), -1, np.int32)
+    for a, b in _runs_bool(_is_d(labels)):
+        ends[a:b] = b
+    return ends
+
+
+def _dist(values):
+    """Robust summary of signed errors in seconds (positive = later than GT)."""
+    x = np.asarray([v for v in values if np.isfinite(v)], float)
+    if not x.size:
+        return {"n": 0}
+    return {"n": int(x.size), "median": float(np.median(x)),
+            "q1": float(np.percentile(x, 25)), "q3": float(np.percentile(x, 75)),
+            "mean": float(x.mean()),
+            "late_1s": float((x > 1).mean()), "early_1s": float((x < -1).mean()),
+            "within_1s": float((np.abs(x) <= 1).mean())}
+
+
+def _overlap_records(pred, gt, half):
+    """E75 block matching: every predicted block with >=1 overlapping GT D run, matched to the
+    first overlapping GT start and the last overlapping GT end. Returns signed onset/end errors."""
+    out = []
+    for a, b in pred:
+        if a >= len(half) or half[a] == 0:
+            continue
+        ov = gt[(gt[:, 1] > a) & (gt[:, 0] < b)]
+        if not len(ov):
+            continue
+        ga, gb = int(ov[0, 0]), int(ov[-1, 1])
+        out.append((float(a - ga) / FPS, float(b - gb) / FPS, int(a), int(b), ga, gb))
+    return out
+
+
+def _ownership_records(labels, stage_labels, gt, half, final_name):
+    """E75 end-ownership: for each final D block, trace the last stage whose D-run end changed.
+
+    ``stage_labels`` is an ordered {name: labels} of the stages *before* the final one; the final
+    labels are ``labels`` and its name is ``final_name``. Returns (owner, creator, onset_err,
+    end_err, ...) for blocks with at least one overlapping GT D run.
+    """
+    names = list(stage_labels) + [final_name]
+    ends = [_run_ends(np.asarray(stage_labels[n])) for n in stage_labels] + [_run_ends(np.asarray(labels))]
+    out = []
+    for a, b in _runs_bool(_is_d(labels)):
+        if a >= len(half) or half[a] == 0:
+            continue
+        ov = gt[(gt[:, 1] > a) & (gt[:, 0] < b)]
+        if not len(ov):
+            continue
+        es = [int(e[b - 1]) for e in ends]
+        creator = next((n for n, e in zip(names, es) if e >= 0), final_name)
+        owner = creator
+        for j in range(1, len(es)):
+            if es[j] != es[j - 1]:
+                owner = names[j]
+        ga, gb = int(ov[0, 0]), int(ov[-1, 1])
+        out.append((owner, creator, float(a - ga) / FPS, float(b - gb) / FPS,
+                    int(a), int(b), ga, gb))
+    return out
+
+
+def d_stages(cell):
+    """The ordered D-028 stage labels of one cell, for S42's stage-ownership diagnostic.
+
+    Keys: ``baseline``, ``gate``, ``growd``, ``ingap``, ``subgap``, ``floor`` (the shipped stack),
+    plus ``ship`` (gate+in-gap, the pre-E66 row) and ``e66`` (gate+growd+in-gap+sub-gap, no floor).
+    The calls are the same functions :func:`possession.pipeline.build_labels` uses, in the same
+    order, with ``guard=False``; ``floor`` is label-identical to :func:`master`. Diagnostic only:
+    nothing here selects anything (D-022), and the result is memoised on the cell.
+    """
+    def build():
+        from . import ballfree, baseline_plus as bp_mod, dgate, growd, ingap, postprocess, subgap
+        m = cell.match
+        dmodel, cols, bf = cell.models
+        pf = dgate.frame_pd(dmodel, cols, m.P, m.V, m.T, m.half)
+        base = _memo(cell, "base", lambda: bp_mod.predict_arrays(
+            m.P, m.T, m.B, m.half, np.zeros(len(m.B), bool), pitch=cell.pitch))
+        gated, dead = dgate.gate(base, m.B, m.half, pf)
+        grown, _ = growd.apply(gated, m, dead=dead, check=False)
+        ph = ballfree.predict_frames(bf, m, pitch=cell.pitch)
+        ship = ingap.gapdec(gated, m.B, m.half, ph)
+        ing = ingap.gapdec(grown, m.B, m.half, ph)
+        sub, _ = subgap.apply(ing, gated, m, pf, fired=dead, check=False)
+        floor = postprocess.apply(sub, postprocess.runs_from_half(m.half), enable=postprocess.ENABLED)
+        return {"baseline": base, "gate": gated, "growd": grown, "ingap": ing, "subgap": sub,
+                "floor": floor, "ship": ship, "e66": sub}
+    return _memo(cell, "d_stages", build)
+
+
+# -- D-interval runner ---------------------------------------------------------------------------
+
+_D_FNS = {}
+_D_STAGES = None
+_D_STAGES_FOR = None
+_D_FINAL = "pred"
+_D_SEEDS = (0,)
+_D_CELLS = ()
+_D_IOU = (.3, .5, .7)
+
+
+def _d_cell(gi, clean, gt, seed, knob, v):
+    """All interval records of one cell: per-threshold counts, greedy-IoU edges, overlap edges,
+    and (when the caller supplied stages) the E75 ownership breakdown."""
+    m = degraded_match(clean, seed, knob, v)
+    cell = Cell(GAMES[gi], clean, m, seed, knob, v)
+    stage_lab = {}
+    if _D_STAGES and _D_STAGES_FOR in _D_FNS:
+        for name, fn in _D_STAGES.items():
+            stage_lab[name] = evaluate.to_codes(fn(cell))
+    out = {}
+    for name, fn in _D_FNS.items():
+        labels = evaluate.to_codes(fn(cell))
+        pred = d_runs(labels, m.half, clean.runs)
+        counts, edges = {}, {}
+        for t in _D_IOU:
+            pairs = _iou_match(pred, gt, t)
+            counts[t] = (len(pairs), len(pred), len(gt), float(np.sum([p[2] for p in pairs])),
+                         len(pairs))
+            edges[t] = [(float(pred[i, 0] - gt[j, 0]) / FPS, float(pred[i, 1] - gt[j, 1]) / FPS,
+                         float(iou), int(pred[i, 0]), int(pred[i, 1]), int(gt[j, 0]), int(gt[j, 1]))
+                        for i, j, iou in pairs]
+        own = None
+        if stage_lab and name == _D_STAGES_FOR:
+            own = _ownership_records(labels, stage_lab, gt, m.half, _D_FINAL)
+        out[name] = {"counts": counts, "edges": edges, "n_pred": int(len(pred)), "n_ref": int(len(gt)),
+                     "overlap": _overlap_records(pred, gt, m.half), "ownership": own}
+    return out
+
+
+def _d_run_game(gi):
+    gid = GAMES[gi]
+    clean = external.load_game(gid)
+    ref = evaluate.to_codes(clean.ref)
+    gt = d_runs(ref, clean.match.half, clean.runs)
+    out = {name: {} for name in _D_FNS}
+    for seed in _D_SEEDS:
+        for knob, v in _D_CELLS:
+            for name, rec in _d_cell(gi, clean, gt, seed, knob, v).items():
+                out[name][(gi, seed, knob, v)] = rec
+    return out
+
+
+def _run_d_intervals(fns, seeds=(0,), cells=None, stages=None, final_name="pred", stages_for=None,
+                     iou=(.3, .5, .7), n_jobs=1):
+    """Shared runner: interval records for one or more pipelines over the frozen grid.
+
+    ``fns`` is {name: pred_fn}; the cell (and its ``memo``) is shared, so two pipelines that reuse
+    products only pay for them once. ``stages`` is an ordered {name: pred_fn} of the stages before
+    the final one, applied to ``stages_for`` (a key of ``fns``), for the E75 ownership breakdown.
+    Internal; the public entry points are :func:`d_interval_score` / :func:`compare_d_intervals`.
+    """
+    global _D_FNS, _D_STAGES, _D_STAGES_FOR, _D_FINAL, _D_SEEDS, _D_CELLS, _D_IOU
+    if cells is None:
+        cells = GROUPS["primary"]
+    _D_FNS = {n: (STAGES[f] if isinstance(f, str) else f) for n, f in fns.items()}
+    _D_STAGES = None if stages is None else {n: (STAGES[f] if isinstance(f, str) else f)
+                                             for n, f in stages.items()}
+    _D_STAGES_FOR = stages_for if _D_STAGES is not None else None
+    _D_FINAL = final_name
+    _D_SEEDS = tuple(seeds)
+    _D_CELLS = tuple(cells)
+    _D_IOU = tuple(iou)
+    if n_jobs > 1:
+        with multiprocessing.get_context("fork").Pool(n_jobs) as pool:
+            parts = pool.map(_d_run_game, range(len(GAMES)), chunksize=1)
+    else:
+        parts = [_d_run_game(i) for i in range(len(GAMES))]
+    return {n: {k: v for p in parts for k, v in p[n].items()} for n in _D_FNS}
+
+
+def _score_from_raw(name, raw, seeds, cells, thresholds):
+    """Aggregate the raw per-cell interval records into a DIntervalScore."""
+    tps = {t: 0 for t in thresholds}
+    npr = {t: 0 for t in thresholds}
+    nrf = {t: 0 for t in thresholds}
+    iou_sum = {t: [] for t in thresholds}
+    per_cell, per_game = {}, {}
+    edges = {t: [] for t in thresholds}
+    overlap, own = [], []
+    for (gi, seed, knob, v), rec in raw.items():
+        cell_key = (knob, v)
+        pc = per_cell.setdefault(cell_key, {t: [0, 0, 0, 0.0, 0] for t in thresholds})
+        pg = per_game.setdefault(gi, {t: [0, 0, 0] for t in thresholds})
+        for t in thresholds:
+            tp, np_, nr, si, nm = rec["counts"][t]
+            tps[t] += tp
+            npr[t] += np_
+            nrf[t] += nr
+            iou_sum[t].append((si / nm) if nm else np.nan)
+            pc[t][0] += tp
+            pc[t][1] += np_
+            pc[t][2] += nr
+            pc[t][3] += si
+            pc[t][4] += nm
+            pg[t][0] += tp
+            pg[t][1] += np_
+            pg[t][2] += nr
+            for (onset, end, iou, op, ep, og, eg) in rec["edges"][t]:
+                edges[t].append({"game": GAMES[gi], "seed": seed, "knob": knob, "v": v,
+                                 "onset_pred": op, "end_pred": ep, "onset_gt": og, "end_gt": eg,
+                                 "onset_err": onset, "end_err": end, "iou": iou})
+        for (onset, end, op, ep, og, eg) in rec["overlap"]:
+            overlap.append({"game": GAMES[gi], "seed": seed, "knob": knob, "v": v,
+                            "onset_pred": op, "end_pred": ep, "onset_gt": og, "end_gt": eg,
+                            "onset_err": onset, "end_err": end})
+        for row in (rec["ownership"] or ()):
+            owner, creator, onset, end, a, b, ga, gb = row
+            own.append({"owner": owner, "creator": creator, "game": GAMES[gi], "seed": seed,
+                        "knob": knob, "v": v, "onset_pred": a, "end_pred": b, "onset_gt": ga,
+                        "end_gt": gb, "onset_err": onset, "end_err": end})
+
+    def f1(tp, np_, nr):
+        return 2.0 * tp / max(1, np_ + nr)
+
+    res = {
+        "name": name, "seeds": tuple(seeds), "cells": tuple(cells), "thresholds": tuple(thresholds),
+        "tp": dict(tps), "n_pred": dict(npr), "n_ref": dict(nrf),
+        "f1": {t: f1(tps[t], npr[t], nrf[t]) for t in thresholds},
+        "mean_iou": {t: (float(np.nanmean(iou_sum[t])) if np.any(np.isfinite(iou_sum[t])) else float("nan"))
+                     for t in thresholds},
+        "per_cell": {}, "per_game": {},
+        "edges": {t: {"n": len(edges[t]),
+                      "onset": _dist([e["onset_err"] for e in edges[t]]),
+                      "end": _dist([e["end_err"] for e in edges[t]]),
+                      "records": edges[t]} for t in thresholds},
+        "overlap_edges": {"n": len(overlap),
+                          "onset": _dist([e["onset_err"] for e in overlap]),
+                          "end": _dist([e["end_err"] for e in overlap]),
+                          "records": overlap},
+        "ownership": None,
+        "note": D_INTERVAL_NOTE,
+    }
+    for (knob, v), pc in per_cell.items():
+        res["per_cell"][(knob, v)] = {
+            t: {"tp": pc[t][0], "n_pred": pc[t][1], "n_ref": pc[t][2],
+                "f1": f1(pc[t][0], pc[t][1], pc[t][2]),
+                "mean_iou": (pc[t][3] / pc[t][4]) if pc[t][4] else float("nan")}
+            for t in thresholds}
+    for gi, pg in per_game.items():
+        res["per_game"][gi] = {t: f1(pg[t][0], pg[t][1], pg[t][2]) for t in thresholds}
+    if own:
+        table = {}
+        for name_ in {r["owner"] for r in own} | {r["creator"] for r in own}:
+            rows = [r for r in own if r["owner"] == name_]
+            if not rows:
+                continue
+            table[name_] = {"n": len(rows), "share": len(rows) / len(own),
+                            "end": _dist([r["end_err"] for r in rows]),
+                            "onset": _dist([r["onset_err"] for r in rows])}
+        res["ownership"] = {"n": len(own), "owners": table,
+                            "creator": {n: sum(1 for r in own if r["creator"] == n)
+                                        for n in {r["creator"] for r in own}},
+                            "records": own}
+    return DIntervalScore(res)
+
+
+class DIntervalScore(dict):
+    """Result of :func:`d_interval_score` (dict; print() it for the table).
+
+    Keys: ``f1``/``tp``/``n_pred``/``n_ref``/``mean_iou`` per IoU threshold (pooled over all scored
+    cell-games), ``per_cell`` and ``per_game``, ``edges`` (signed per-interval errors from greedy
+    IoU matching at every threshold), ``overlap_edges`` (E75's any-overlap block matching) and
+    ``ownership`` (only when stage callables were supplied). Diagnostic, never a selector (D-022).
+    """
+
+    def __str__(self):
+        s = ["dev-v1 D intervals %s: %d seeds, %d cells" % (
+            self["name"], len(self["seeds"]), len(self["cells"]))]
+        for t in self["thresholds"]:
+            e = self["edges"][t]
+            s.append("  IoU %.1f  F1 %.4f  tp %d / pred %d / ref %d  meanIoU %.4f  "
+                     "end med %+.2fs  late %.1f%%  early %.1f%%" % (
+                         t, self["f1"][t], self["tp"][t], self["n_pred"][t], self["n_ref"][t],
+                         self["mean_iou"][t], e["end"].get("median", float("nan")),
+                         100 * e["end"].get("late_1s", float("nan")),
+                         100 * e["end"].get("early_1s", float("nan"))))
+        ov = self["overlap_edges"]
+        if ov["n"]:
+            s.append("  overlap-matched (E75) n %d  onset med %+.2fs  end med %+.2fs  "
+                     "end late %.1f%% / early %.1f%%" % (
+                         ov["n"], ov["onset"]["median"], ov["end"]["median"],
+                         100 * ov["end"]["late_1s"], 100 * ov["end"]["early_1s"]))
+        if self["ownership"]:
+            s.append("  stage ownership (n %d):" % self["ownership"]["n"])
+            for name, r in self["ownership"]["owners"].items():
+                s.append("    %-9s %5.1f%%  end med %+.2fs  late %.1f%%  early %.1f%%" % (
+                    name, 100 * r["share"], r["end"]["median"],
+                    100 * r["end"]["late_1s"], 100 * r["end"]["early_1s"]))
+        s.append("  " + self["note"])
+        return "\n".join(s)
+
+
+def d_interval_score(pred_fn, iou=(.3, .5, .7), *, seeds=SEEDS, cells=None, stages=None,
+                     final_name="pred", n_jobs=1):
+    """D-interval F1 / IoU and signed edge errors for one pipeline.
+
+    **Diagnostic, never a selector (D-022).** spellF1 is the ranked objective; this is the
+    stoppage-level view (count, duration, IoU, onset/end error).
+
+    ``pred_fn`` is a callable (or a name in :data:`STAGES`). The frozen 10 games and the requested
+    cells/seeds are used; ``cells`` defaults to the 6 primary cells and ``seeds`` to the frozen
+    ``SEEDS`` (0, 1, 2). Pass ``seeds=(0,)`` for E07's stage-B convention (the acceptance check).
+
+    GT intervals are maximal runs of D inside each game's scored runs (``clean.runs``). Matching is
+    greedy by IoU, strongest pair first (E07). ``f1`` is pooled (2*tp/(pred+ref)) and also
+    reported per cell; ``mean_iou`` is the mean per-cell-game mean IoU.
+
+    ``edges[t]`` holds one record per matched interval: ``onset_pred - onset_gt`` and
+    ``end_pred - end_gt`` in seconds (positive = later than GT), the IoU, and the share of errors
+    later/earlier than 1 s. ``overlap_edges`` is E75's any-overlap block matching (each predicted
+    block to the first overlapping GT onset and the last overlapping GT end).
+
+    ``stages`` (optional) is an ordered {name: pred_fn} of the stages **before** ``pred_fn``
+    (e.g. baseline, gate, growd, ingap, subgap). It adds ``ownership``: for each predicted D block,
+    the last stage whose D-run end differs from the previous stage's end -- the E75 table. Use
+    :func:`d_stages` for the frozen stack's stage callables. ``final_name`` is the name the scored
+    pipeline gets in that table (E75 used ``"floor"``).
+    """
+    res = _run_d_intervals({"_s42": pred_fn}, seeds=seeds, cells=cells, stages=stages,
+                           final_name=final_name, stages_for="_s42", iou=iou, n_jobs=n_jobs)
+    name = pred_fn if isinstance(pred_fn, str) else getattr(pred_fn, "__name__", "pred_fn")
+    return _score_from_raw(name, res["_s42"], tuple(seeds), tuple(cells or GROUPS["primary"]),
+                           tuple(iou))
+
+
+def _d_boot_delta(raw_a, raw_b, seeds, cells, t, draws):
+    """Shared-draw game-cluster bootstrap of pooled interval-F1(a) - F1(b)."""
+    def series(raw):
+        per_seed = []
+        for s in seeds:
+            tp = np.array([[raw[(g, s, k, v)]["counts"][t][0] for g in range(len(GAMES))]
+                           for k, v in cells])
+            np_ = np.array([[raw[(g, s, k, v)]["counts"][t][1] for g in range(len(GAMES))]
+                            for k, v in cells])
+            nr = np.array([[raw[(g, s, k, v)]["counts"][t][2] for g in range(len(GAMES))]
+                           for k, v in cells])
+            tp_d = tp[:, draws].sum(axis=2).sum(axis=0)
+            np_d = np_[:, draws].sum(axis=2).sum(axis=0)
+            nr_d = nr[:, draws].sum(axis=2).sum(axis=0)
+            per_seed.append(2.0 * tp_d / np.maximum(1, np_d + nr_d))
+        return np.mean(per_seed, axis=0)
+    return series(raw_a) - series(raw_b)
+
+
+class DIntervalCompare(dict):
+    """Result of :func:`compare_d_intervals` (dict; print() it)."""
+
+    def __str__(self):
+        s = ["dev-v1 D intervals %s - %s (%d shared draws, %d seeds, %d cells)" % (
+            self["a"], self["b"], N_DRAWS, len(self["seeds"]), len(self["cells"]))]
+        for t in self["thresholds"]:
+            d = self["delta"][t]
+            e = self["edges"][t]
+            s.append("  IoU %.1f  F1 %s %.4f vs %s %.4f  delta %+.4f %s neg%d  "
+                     "end med %+.2fs vs %+.2fs" % (
+                         t, self["a"], d["f1_a"], self["b"], d["f1_b"], d["delta"],
+                         d["ci"], d["neg"], e["end_a"].get("median", float("nan")),
+                         e["end_b"].get("median", float("nan"))))
+        s.append("  " + D_INTERVAL_NOTE)
+        return "\n".join(s)
+
+
+def compare_d_intervals(a, b, iou=(.3, .5, .7), *, seeds=SEEDS, cells=None, n_jobs=1):
+    """A - B on the D-interval diagnostic, with the same 10 games, cells and shared draws as spellF1.
+
+    **Diagnostic, never a selector (D-022).** Each side is a callable or a name in :data:`STAGES`.
+    Returns per-threshold ``{f1_a, f1_b, delta, ci, neg, per_cell, per_game}`` plus the signed edge
+    summaries of both sides. The CI is a game-cluster bootstrap over the frozen shared draws
+    (``_DRAWS``), seed-mean inside each draw; ``neg`` is the number of games with a negative delta.
+    """
+    if cells is None:
+        cells = GROUPS["primary"]
+    seeds, cells = tuple(seeds), tuple(cells)
+    ra = a if isinstance(a, str) else getattr(a, "__name__", "a")
+    rb = b if isinstance(b, str) else getattr(b, "__name__", "b")
+    raw = _run_d_intervals({"a": a, "b": b}, seeds=seeds, cells=cells, iou=iou, n_jobs=n_jobs)
+    A = _score_from_raw(ra, raw["a"], seeds, cells, tuple(iou))
+    B = _score_from_raw(rb, raw["b"], seeds, cells, tuple(iou))
+    out = DIntervalCompare(a=ra, b=rb, seeds=seeds, cells=cells, thresholds=tuple(iou))
+    out["f1_a"] = dict(A["f1"])
+    out["f1_b"] = dict(B["f1"])
+    out["delta"], out["ci"], out["neg"] = {}, {}, {}
+    for t in iou:
+        draws = _d_boot_delta(raw["a"], raw["b"], seeds, cells, t, _DRAWS)
+        out["delta"][t] = {"f1_a": A["f1"][t], "f1_b": B["f1"][t],
+                           "delta": A["f1"][t] - B["f1"][t],
+                           "ci": _ci(draws), "neg": int(sum(1 for g in range(len(GAMES))
+                                                           if A["per_game"][g][t] < B["per_game"][g][t]))}
+        out["ci"][t] = out["delta"][t]["ci"]
+        out["neg"][t] = out["delta"][t]["neg"]
+    out["per_cell"] = {t: {kv: {"a": A["per_cell"][kv][t]["f1"],
+                                "b": B["per_cell"][kv][t]["f1"],
+                                "delta": A["per_cell"][kv][t]["f1"] - B["per_cell"][kv][t]["f1"]}
+                           for kv in cells} for t in iou}
+    out["edges"] = {t: {"n_a": A["edges"][t]["n"], "n_b": B["edges"][t]["n"],
+                        "onset_a": A["edges"][t]["onset"], "onset_b": B["edges"][t]["onset"],
+                        "end_a": A["edges"][t]["end"], "end_b": B["edges"][t]["end"]} for t in iou}
     return out
