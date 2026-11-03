@@ -23,6 +23,14 @@ Checks, in order:
 9. the Q34 provenance statuses (the merged B27): a number report carries ``events_source``, the
    adoption report carries ``base_rule_source``, and a reference log's git provenance is not
    ``"unknown"`` -- so a broken install or a stale digest fails here, not only in a diagnostic.
+10. the numbers manifest's shape (B28): ``notebooks/numbers.json`` is tracked by git, holds only
+   numbers and strings (never an array -- a coordinate array is match data), and names only public
+   figures/placeholders or local-only paths under ``notebooks/figs/``.
+11. the public walkthrough page's publication audit (B28, the merged P04): if
+   ``notebooks/possession_walkthrough_public.html`` is present, all 13 checks must pass; if it is
+   absent the check is a clean skip, because the page is only built before a release (D-026).
+   The audit starts in its own process just before the validator and is joined here, so its ~2 s
+   cost is hidden behind checks 4-10; it never overlaps the two builds or the sha assertion.
 
 A failure prints the specific mismatch (got X, the freeze says Y) and exits non-zero.  Nothing in
 this script edits a source file, the CSV or the manifest; ``outputs/submission.csv`` is only
@@ -115,7 +123,7 @@ def classify(path):
 
 def git_identity():
     """Print HEAD vs the freeze tag; warn (never fail) on a post-freeze HEAD."""
-    print("== 1/9 git identity")
+    print("== 1/11 git identity")
     if git("rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
         raise Failure("not a git checkout: the freeze record names a commit and tag, so the identity "
                       "cannot be checked. Run this from the `solution/` repository.")
@@ -164,7 +172,7 @@ def git_identity():
 
 def build_twice():
     """Rebuild the submission twice and compare the bytes."""
-    print("== 2/9 two builds, byte-identical")
+    print("== 2/11 two builds, byte-identical")
     os.makedirs(SCRATCH, exist_ok=True)
     canonical = os.path.join(SOLUTION, "outputs", "submission.csv")
     second = os.path.join(SCRATCH, "build2.csv")
@@ -193,7 +201,7 @@ def build_twice():
 
 
 def check_sha(path, sha):
-    print("== 3/9 frozen sha256")
+    print("== 3/11 frozen sha256")
     if sha != FROZEN_SHA:
         raise Failure(
             "sha256 mismatch: the rebuilt CSV is %s\n"
@@ -208,7 +216,7 @@ def check_sha(path, sha):
 
 def check_validator(path):
     """Run the organizer's validator on the rebuilt CSV; assert Valid + 199,319 rows."""
-    print("== 4/9 organizer validator")
+    print("== 4/11 organizer validator")
     repo = os.path.abspath(os.environ.get(
         "MTAH_REPO_DIR", os.path.join(ROOT, "more-than-a-hack-2027")))
     validator = os.path.join(repo, "evaluation", "validate_submission.py")
@@ -273,7 +281,7 @@ def maximal_D_runs(labels):
 
 def check_counts(path):
     """Count spells / D stretches / X from the CSV itself (not from the manifest)."""
-    print("== 5/9 frozen shape")
+    print("== 5/11 frozen shape")
     labels = read_labels(path)
     expect("rows", len(labels), FROZEN_ROWS)
 
@@ -295,7 +303,7 @@ def check_counts(path):
 
 
 def check_rules_guard():
-    print("== 6/9 tests.test_rules_guard + tests.test_prose_guard")
+    print("== 6/11 tests.test_rules_guard + tests.test_prose_guard")
     out, elapsed = run([sys.executable, "-m", "unittest",
                         "tests.test_rules_guard", "tests.test_prose_guard"],
                        cwd=SOLUTION, log=os.path.join(SCRATCH, "rules_guard.log"))
@@ -313,7 +321,7 @@ def check_rules_guard():
 
 def check_numbers():
     """Merged B22: a post-freeze commit may not move a published number unnoticed."""
-    print("== 7/9 walkthrough number manifest")
+    print("== 7/11 walkthrough number manifest")
     script = os.path.join(SOLUTION, "scripts", "walkthrough_numbers.py")
     if not os.path.isfile(script):
         raise Failure("missing %s; the number manifest is the docs-drift gate (B22)." % script)
@@ -364,7 +372,7 @@ def check_keeper_contract():
     silently loses ``gk_possession`` this fails, instead of only a later diagnostic noticing. The
     check is a diagnostic contract only -- ``gk_possession`` stays out of the build (D-028/D-029).
     """
-    print("== 8/9 keeper exclusion contract")
+    print("== 8/11 keeper exclusion contract")
     import numpy as np
     from unittest import mock
 
@@ -426,7 +434,7 @@ def check_provenance():
     the adoption report names its ablation base rule, and a reference log names a real git commit
     (never ``unknown``). A broken install or stale digest fails the freeze instead of a diagnostic.
     """
-    print("== 9/9 provenance statuses")
+    print("== 9/11 provenance statuses")
     import numpy as np
     from unittest import mock
 
@@ -469,6 +477,52 @@ def check_provenance():
           "git=%s" % git_hash)
 
 
+def _surfaces():
+    """Import the B28 surface checks without requiring ``scripts`` to be a package."""
+    scripts = os.path.join(SOLUTION, "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import freeze_surfaces  # noqa: E402 - local helper, no match data
+    return freeze_surfaces
+
+
+def check_manifest_shape():
+    """B28: the tracked number manifest holds numbers and strings, never an array of coordinates."""
+    print("== 10/11 numbers manifest shape")
+    surfaces = _surfaces()
+    try:
+        report = surfaces.check_manifest()
+    except surfaces.SurfaceFailure as exc:
+        raise Failure(str(exc))
+    print("  ok   manifest           %d entries, %d figure ref(s), tracked by git (%s)"
+          % (report["entries"], report["figure_refs"], report["manifest"]))
+
+
+def _public_page_start():
+    """Start the public-page audit now so checks 4-10 run while it does (B28)."""
+    return _surfaces().start_public_page()
+
+
+def check_public_page(proc=None):
+    """B28/P04: if the public page exists, its 13-check publication audit must pass; else skip.
+
+    ``proc`` is the audit process started just before the validator; joining it here hides the
+    audit's ~2 s behind checks 4-10 without ever overlapping the two builds.
+    """
+    print("== 11/11 public walkthrough page")
+    surfaces = _surfaces()
+    try:
+        report = surfaces.check_public_page(proc=proc)
+    except surfaces.SurfaceFailure as exc:
+        raise Failure(str(exc))
+    if report["status"] == "absent":
+        print("  skip public page      not built (%s); optional deliverable, nothing to audit"
+              % os.path.relpath(report["html"], SOLUTION))
+        return
+    print("  ok   public page        %d/%d audit checks, no match-derived figure or text (%s)"
+          % (report["checks"], surfaces.AUDIT_CHECKS, os.path.relpath(report["html"], SOLUTION)))
+
+
 def main(argv=None):
     global SCRATCH
     ap = argparse.ArgumentParser(description="Assert the D-029 freeze; fail loudly, never repair.")
@@ -493,12 +547,15 @@ def main(argv=None):
 
         path, sha = build_twice()
         check_sha(path, sha)
+        page_proc = _public_page_start()
         check_validator(path)
         counts, spells, d_runs = check_counts(path)
         check_rules_guard()
         check_numbers()
         check_keeper_contract()
         check_provenance()
+        check_manifest_shape()
+        check_public_page(page_proc)
     except Failure as error:
         sys.stdout.flush()
         print("\nFREEZE CHECK FAILED", file=sys.stderr)
