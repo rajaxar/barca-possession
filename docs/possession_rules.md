@@ -56,8 +56,9 @@ it adds no delay. The explicit half-second merge over a list of contacts
 (25%) contain exactly one own-team touch, median 2.2 s, and 44% of those are 2 seconds or shorter.
 Possessions started by an opposing touch include 12% of 1 second or less. The merge window is
 deliberately shorter than the shortest possession R08's label-side bound says we must keep (1.0 s).
-Spells shorter than the 0.64 s window are below that bound anyway; the short-spell floor, not the
-merge, is the rule that removes them.
+Spells shorter than the 0.64 s window are below that bound anyway, and they are removed earlier: the
+16-frame confirmation never lets a challenger that short survive, and the 0.8 s merge absorbs any that
+do before the floor sees them.
 
 ## 4. We do not rebuild possessions from touches
 
