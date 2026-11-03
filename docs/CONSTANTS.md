@@ -41,26 +41,26 @@ The scope is **discovered, not listed in code**: every `possession/*.py` except 
 
 Registered (14): the stage writers (`pipeline` and `make_submission` declare no constant), the training-data simulator, `config`, the modules a shipped stage reads values from (`dproxy`, `ballfree`), and `features`, whose columns feed the ball-free model.
 
-Exempt (14), each named with its justification:
+Exempt (14), each named with its justification. The last column is computed, not claimed: the import/call graph from `possession/make_submission.py` is walked, function-local imports included (`audio` is imported inside `audio_status_line`). `label path` means a function of the module is called from `pipeline.build_labels`; `imported, never called` means the module is loaded on the build path but no function of it runs there.
 
-| module | category | why it holds no shipped decision value |
-|---|---|---|
-| `possession/audio.py` | report-only | Referee-whistle decoder (31 constants). `make_submission` imports it only to print the after-the-write `audio: ok\|reason` line, which cannot change the CSV or the exit code (S26) — so it runs during the build but never writes a label. Reclassified from 'not shipped', which was false. |
-| `possession/clean.py` | not shipped | Label-free tracking cleaner used by research scripts (3 constants). The shipped pipeline reads the raw ATD through data.load_match, so no cleaning default can move a label. |
-| `possession/data.py` | loader/parser | ATD and Smart-Tagging loader: array layout, chunk sizes, pitch defaults and column codes (7 constants). It reads and reshapes provider files and holds no decision value; E113 left loader/parser constants to a later card. |
-| `possession/deadball.py` | not shipped | E07's dead-ball sharpeners, all default-off and tier 2 (18 constants). pipeline.py states it is not imported by construction; the primary whole-gap rule lives in the registered dgate. |
-| `possession/dev_v1.py` | dev harness | The D-022 dev-v1 harness: games, seeds, cells and bootstrap draws (27 constants). It defines the measurement, never the build, and the build never imports it. |
-| `possession/diagnostics.py` | report-only | E105 ball-in-play diagnostics with an explicit playing clock (4 constants). It reads the frozen CSV and prints; it sets nothing. |
-| `possession/evaluate.py` | dev harness | Adapts predictions and references to the organizer metric, pools games and computes CIs (4 constants). Scoring only: nothing here writes a label, and the build imports it only through external's cache checks. |
-| `possession/external.py` | loader/parser | IDSSE/SkillCorner loaders, cache version and provider flight filters (14 constants). They select and clean the external training games; the build never uses them to set a label. E113 left loader/parser constants to a later card. |
-| `possession/gk_possession.py` | report-only | E38 keeper-in-possession detector (23 constants). dproxy calls it for a report-only keeper table; its mask never writes a label, and growd inherits only dproxy's own three values. |
-| `possession/hsmm.py` | not shipped | E09 HSMM/Viterbi decoder arm, dropped by D-028 (7 constants). pipeline.py does not import it. |
-| `possession/render.py` | not shipped | Top-down clip renderer for figures and the notebook (13 constants). Nothing on the CSV path imports it. |
-| `possession/spells_from_events.py` | not shipped | E03 event-first decoder behind the closed touch arm (4 constants). pipeline.py does not import it. |
-| `possession/supervised.py` | not shipped | E10 learned frame model, not shipped and not imported by make_submission (12 constants). Its own docstring records the status. |
-| `possession/touches.py` | not shipped | E02 ball-touch detector behind the closed event-first arm (3 constants). Nothing on the CSV path imports it. |
+| module | category | why it holds no shipped decision value | reachability |
+|---|---|---|---|
+| `possession/audio.py` | report-only | Referee-whistle decoder (31 constants). `make_submission` imports it only to print the after-the-write `audio: ok\|reason` line, which cannot change the CSV or the exit code (S26) — so it runs during the build but never writes a label. Reclassified from 'not shipped', which was false. | imported, never called |
+| `possession/clean.py` | not shipped | Label-free tracking cleaner used by research scripts (3 constants). The shipped pipeline reads the raw ATD through data.load_match, so no cleaning default can move a label. | not reachable |
+| `possession/data.py` | loader/parser | ATD and Smart-Tagging loader: array layout, chunk sizes, pitch defaults and column codes (7 constants). It reads and reshapes provider files and holds no decision value; E113 left loader/parser constants to a later card. | label path |
+| `possession/deadball.py` | not shipped | E07's dead-ball sharpeners, all default-off and tier 2 (18 constants). pipeline.py states it is not imported by construction; the primary whole-gap rule lives in the registered dgate. | not reachable |
+| `possession/dev_v1.py` | dev harness | The D-022 dev-v1 harness: games, seeds, cells and bootstrap draws (27 constants). It defines the measurement, never the build, and the build never imports it. | not reachable |
+| `possession/diagnostics.py` | report-only | E105 ball-in-play diagnostics with an explicit playing clock (4 constants). It reads the frozen CSV and prints; it sets nothing. | CLI report |
+| `possession/evaluate.py` | dev harness | Adapts predictions and references to the organizer metric, pools games and computes CIs (4 constants). Scoring only: nothing here writes a label, and the build imports it only through external's cache checks. | imported, never called |
+| `possession/external.py` | loader/parser | IDSSE/SkillCorner loaders, cache version and provider flight filters (14 constants). They select and clean the external training games; the build never uses them to set a label. E113 left loader/parser constants to a later card. | label path |
+| `possession/gk_possession.py` | report-only | E38 keeper-in-possession detector (23 constants). dproxy calls it for a report-only keeper table; its mask never writes a label, and growd inherits only dproxy's own three values. | imported, never called |
+| `possession/hsmm.py` | not shipped | E09 HSMM/Viterbi decoder arm, dropped by D-028 (7 constants). pipeline.py does not import it. | not reachable |
+| `possession/render.py` | not shipped | Top-down clip renderer for figures and the notebook (13 constants). Nothing on the CSV path imports it. | not reachable |
+| `possession/spells_from_events.py` | not shipped | E03 event-first decoder behind the closed touch arm (4 constants). pipeline.py does not import it. | not reachable |
+| `possession/supervised.py` | not shipped | E10 learned frame model, not shipped and not imported by make_submission (12 constants). Its own docstring records the status. | not reachable |
+| `possession/touches.py` | not shipped | E02 ball-touch detector behind the closed event-first arm (3 constants). Nothing on the CSV path imports it. | not reachable |
 
-`features` is registered rather than exempt because `ballfree` reads its columns: it is the one E113 perception module on a label path, and B30 folded it in so no exempt module feeds a shipped stage. What remains is E113's loader/parser boundary — `data`, `external` and `evaluate` — named above and left to a later card.
+`features` is registered rather than exempt because `ballfree` reads its columns: it is the one E113 perception module on a label path, and B30 folded it in so no exempt module feeds a shipped stage. The loader/parser boundary — `data`, `external` and `evaluate` — is named above: `data` and `external` are proven on the label path with no literal read outside their own parse functions, and `evaluate` is proven never called by the label head.
 
 ## Fitted on this match without labels
 

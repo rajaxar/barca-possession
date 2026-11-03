@@ -152,6 +152,38 @@ class ScopeIsDiscovered(unittest.TestCase):
                 self.assertIsInstance(c.get("line"), int, "%s:%s has no line" % (mod, name))
 
 
+class ExemptionsAreProven(unittest.TestCase):
+    """B31: every exemption's category is enforced against the import/call graph, not its prose."""
+
+    def test_every_exemption_matches_its_reachability(self):
+        problems = cp.exemption_problems()
+        self.assertEqual(problems, [], "an exemption contradicts the import graph:\n  "
+                         + "\n  ".join(problems))
+        report = cp.exemption_report()
+        self.assertEqual(len(report), 14, "the graph did not classify every exemption")
+        for mod, row in report.items():
+            with self.subTest(module=mod):
+                self.assertIn(row["category"], cp.EXEMPT_CATEGORIES)
+
+    def test_audio_is_reached_only_by_the_post_write_status_line(self):
+        """The acceptance bug: audio is imported by make_submission, but only after the CSV is written."""
+        row = cp.exemption_report()["possession/audio.py"]
+        self.assertTrue(row["reachable"], "audio must be reachable for the status-line regression")
+        self.assertFalse(row["label_path"])
+        self.assertFalse(row["imported_on_label"])
+        self.assertTrue(any(container == "audio_status_line"
+                            for _, _, container, _ in row["import_sites"]),
+                        "the graph lost the function-local import that hid this before")
+
+    def test_loader_constants_are_read_only_inside_their_module(self):
+        report = cp.exemption_report()
+        for mod in ("possession/data.py", "possession/external.py"):
+            with self.subTest(module=mod):
+                self.assertTrue(report[mod]["label_path"])
+                self.assertEqual(report[mod]["literal_reads"], {},
+                                 "a loader constant is read by another module")
+
+
 class GuardDetects(unittest.TestCase):
     """The register check fires on planted constants, fields, values, scaffold abuse and scope gaps."""
 
@@ -245,6 +277,49 @@ class GuardDetects(unittest.TestCase):
             problems = cp.check(tmp)
             self.assertTrue(any("stale exemption: possession/gone.py" in p for p in problems),
                             "\n".join(problems))
+
+    def test_planted_reachable_module_marked_not_shipped_fails(self):
+        """B31 plant 1: the graph must reject 'not shipped' on a module the build imports."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_tree(tmp)
+            self.assertEqual(cp.check(tmp), [], "the copied tree must start clean")
+            manifest = reload_manifest(tmp)
+            manifest["exempt"]["possession/data.py"]["category"] = "not shipped"
+            save_manifest(tmp, manifest)
+            problems = cp.check(tmp)
+            hits = [p for p in problems if p.startswith("exempt module possession/data.py")]
+            self.assertTrue(hits, "a reachable module was accepted as 'not shipped':\n"
+                            + "\n".join(problems))
+            self.assertIn("claims 'not shipped' but the shipped entry point reaches it", hits[0])
+            self.assertIn("pipeline", hits[0])
+
+    def test_planted_unreachable_module_marked_report_only_fails(self):
+        """B31 plant 2: 'report-only' needs a status path (or a CLI), not silence."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_tree(tmp)
+            self.assertEqual(cp.check(tmp), [], "the copied tree must start clean")
+            manifest = reload_manifest(tmp)
+            manifest["exempt"]["possession/hsmm.py"]["category"] = "report-only"
+            save_manifest(tmp, manifest)
+            problems = cp.check(tmp)
+            hits = [p for p in problems if p.startswith("exempt module possession/hsmm.py")]
+            self.assertTrue(hits, "an unreachable module was accepted as 'report-only':\n"
+                            + "\n".join(problems))
+            self.assertIn("nothing imports it", hits[0])
+            self.assertIn("use 'not shipped'", hits[0])
+
+    def test_audio_marked_not_shipped_fails(self):
+        """The exact acceptance error: audio is imported, so 'not shipped' is false."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_tree(tmp)
+            manifest = reload_manifest(tmp)
+            manifest["exempt"]["possession/audio.py"]["category"] = "not shipped"
+            save_manifest(tmp, manifest)
+            problems = cp.check(tmp)
+            hits = [p for p in problems if p.startswith("exempt module possession/audio.py")]
+            self.assertTrue(hits, "the historical audio mistake was not caught:\n"
+                            + "\n".join(problems))
+            self.assertIn("audio_status_line", hits[0])
 
 
 if __name__ == "__main__":

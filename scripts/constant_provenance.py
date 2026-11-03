@@ -14,6 +14,21 @@ neither fails, so a constant cannot arrive in a file nobody remembered to add to
 Every entry also records the AST line of its assignment.  A constant that moves fails with the line
 the AST now reports, so refreshing a citation is a one-number edit.
 
+The ``exempt`` block is not taken on faith either (B31).  An import/call graph is built from the
+shipped entry point, ``possession/make_submission.py``, and each exemption's category is enforced
+against what the graph says:
+
+* ``not shipped``  -- no import path from the entry point may reach it;
+* ``report-only``  -- it may be imported, but no function of it may be called from
+  ``pipeline.build_labels`` (the status line runs *after* the CSV is written), or it must be a
+  ``__main__`` report on a finished artifact;
+* ``loader/parser``-- it must be called on the label path, and its literal constants must not be read
+  by any other module;
+* ``dev harness``  -- no function of it may be called from ``pipeline.build_labels``.
+
+Function-local imports count: ``make_submission`` imports ``audio`` inside ``audio_status_line``, and
+a module-level-only scan would have repeated the acceptance error that hid that import.
+
     python scripts/constant_provenance.py --check     # non-zero exit and a list on any problem
     python scripts/constant_provenance.py --write     # regenerate docs/CONSTANTS.md from the JSON
 
@@ -35,10 +50,10 @@ PACKAGE = "possession"
 # module has one category plus a written justification, so the gap is named rather than accidental.
 EXEMPT_CATEGORIES = (
     "not shipped",       # research arm, renderer, closed decoder: nothing on the CSV path imports it
-    "report-only",       # runs against this match but only prints a diagnostic; never writes a label
-    "loader/parser",     # reads/reshapes provider data; parses arrays, holds no decision value
+    "report-only",       # runs on a finished artifact or after the write; nothing on the label path calls it
+    "loader/parser",     # reads/reshapes provider data; on the label path, but holds no decision value
     "perception",        # builds features from tracking; feeds a model, not a label directly
-    "dev harness",       # scoring/evaluation machinery; defines the measurement, not the build
+    "dev harness",       # scoring/evaluation machinery; loaded at most for a container, never called
 )
 
 # The five provenance classes the card asks for, plus one explicit non-provenance class.  `scaffold`
@@ -134,6 +149,11 @@ def module_assignments(path):
     """
     with open(path, encoding="utf-8") as fh:
         tree = ast.parse(fh.read(), filename=path)
+    return tree_assignments(tree)
+
+
+def tree_assignments(tree):
+    """``module_assignments`` for an already-parsed tree (the graph parses every module once)."""
     defs = _local_defs(tree)
     found = []
 
@@ -355,12 +375,292 @@ def audit(root=SOLUTION):
     for mod in exempt:
         if mod not in present:
             problems.append("stale exemption: %s is not on disk -- remove it from \"exempt\"" % mod)
+    report = exemption_report(root)
+    graph_problems = exemption_problems(root, report)
+    problems.extend(graph_problems)
+    stats["exempt_total"] = len(report)
+    stats["exempt_proven"] = len(report) - len(
+        {mod for mod in report if any(mod in p for p in graph_problems)})
     return problems, stats
 
 
 def check(root=SOLUTION):
     """All problems with the register at ``root``; an empty list means every constant is tagged."""
     return audit(root)[0]
+
+
+# ------------------------------------------------------------------ reachability (B31)
+ENTRY = "possession/make_submission.py"
+LABEL_ROOT = ("possession/pipeline.py", "build_labels")
+
+
+def _base_module(node):
+    """The absolute module a ``from`` statement imports from (``from . import x`` -> ``possession``)."""
+    if node.level:
+        return "possession" + ("." + node.module if node.module else "")
+    return node.module or ""
+
+
+def _has_cli(tree):
+    """True for a module-level ``if __name__ == "__main__"`` report entry point."""
+    for node in tree.body:
+        if not isinstance(node, ast.If):
+            continue
+        for sub in ast.walk(node.test):
+            if isinstance(sub, ast.Name) and sub.id == "__name__":
+                return True
+    return False
+
+
+def graph(root=SOLUTION):
+    """Parse every module once and return its import edges, aliases and function-call edges.
+
+    ``imports[mod]`` holds ``(target, lineno, container, kind, imported_name)`` where ``container`` is
+    the enclosing function name or ``"<module>"`` and ``kind`` is ``"module"`` or ``"deferred"``.
+    ``calls[(mod, function)]`` is the set of ``(module, name)`` call targets resolved through the
+    module's own imports.  Calls to methods or attribute values that are not module-level functions
+    (``evaluate.Game(...)``, a namedtuple container) resolve to no node: only code that can run is an
+    edge.
+    """
+    trees = {}
+    for mod in discovered(root):
+        path = os.path.join(root, mod)
+        with open(path, encoding="utf-8") as fh:
+            trees[mod] = ast.parse(fh.read(), filename=path)
+    present = set(trees)
+    imports = {mod: [] for mod in trees}
+    module_alias = {mod: {} for mod in trees}
+    func_alias = {mod: {} for mod in trees}
+    defs = {mod: {n.name: n for n in tree.body
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            for mod, tree in trees.items()}
+
+    def target(name):
+        path = name.replace(".", "/") + ".py"
+        return path if path in present else None
+
+    def walk(body, mod, container):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                walk(node.body, mod, node.name)
+                continue
+            if isinstance(node, ast.ClassDef):
+                walk(node.body, mod, node.name)
+                continue
+            if isinstance(node, ast.ImportFrom):
+                base = _base_module(node)
+                if base == "possession":
+                    for alias in node.names:
+                        hit = target("possession." + alias.name)
+                        if hit:
+                            kind = "module" if container == "<module>" else "deferred"
+                            imports[mod].append((hit, node.lineno, container, kind, alias.name))
+                            module_alias[mod][alias.asname or alias.name] = hit
+                else:
+                    hit = target(base)
+                    if hit:
+                        kind = "module" if container == "<module>" else "deferred"
+                        imports[mod].append((hit, node.lineno, container, kind, None))
+                        for alias in node.names:
+                            func_alias[mod][alias.asname or alias.name] = (hit, alias.name)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if not alias.name.startswith("possession."):
+                        continue
+                    hit = target(alias.name)
+                    if hit:
+                        kind = "module" if container == "<module>" else "deferred"
+                        imports[mod].append((hit, node.lineno, container, kind, None))
+                        module_alias[mod][alias.asname or alias.name.split(".")[-1]] = hit
+            elif isinstance(node, (ast.If, ast.Try, ast.For, ast.While, ast.With)):
+                for attr in ("body", "orelse", "finalbody"):
+                    walk(getattr(node, attr, []) or [], mod, container)
+                for handler in getattr(node, "handlers", []) or []:
+                    walk(handler.body, mod, container)
+
+    for mod, tree in trees.items():
+        walk(tree.body, mod, "<module>")
+
+    calls = {}
+    for mod, fns in defs.items():
+        for name, fn in fns.items():
+            hits = set()
+            for node in ast.walk(fn):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if isinstance(func, ast.Name):
+                    if func.id in defs[mod]:
+                        hits.add((mod, func.id))
+                    elif func.id in func_alias[mod]:
+                        hit = func_alias[mod][func.id]
+                        if hit[1] in defs.get(hit[0], {}):
+                            hits.add(hit)
+                elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+                    hit = module_alias[mod].get(func.value.id)
+                    if hit and func.attr in defs.get(hit, {}):
+                        hits.add((hit, func.attr))
+            calls[(mod, name)] = hits
+    return dict(trees=trees, imports=imports, module_alias=module_alias, defs=defs, calls=calls)
+
+
+def reachable_imports(g):
+    """``(modules, parent)`` reachable from the shipped entry point by any import, nested included."""
+    seen = {ENTRY}
+    parent = {}
+    stack = [ENTRY]
+    while stack:
+        mod = stack.pop()
+        for hit, line, container, kind, name in g["imports"].get(mod, ()):
+            if hit not in seen:
+                seen.add(hit)
+                parent[hit] = (mod, line, container, kind, name)
+                stack.append(hit)
+    return seen, parent
+
+
+def reachable_calls(g):
+    """``(nodes, modules)`` reachable from ``pipeline.build_labels`` through resolved calls."""
+    seen = set()
+    stack = [LABEL_ROOT]
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(g["calls"].get(node, ()))
+    return seen, {mod for mod, _ in seen}
+
+
+def _route(parent, mod):
+    """Human-readable shortest import chain from the entry point to ``mod``."""
+    steps = []
+    while mod in parent:
+        src, line, container, kind, _ = parent[mod]
+        where = src[:-3] if src.endswith(".py") else src
+        steps.append("%s (line %d%s)" % (where, line,
+                                         ", in %s()" % container if kind == "deferred" else ""))
+        mod = src
+    return " -> ".join(reversed(steps))
+
+
+def _external_reads(g, root, target):
+    """``{constant: module}`` for constants of ``target`` read outside it (attribute or import)."""
+    consts = {a.name for a in module_assignments(os.path.join(root, target))}
+    hits = {}
+    for mod, tree in g["trees"].items():
+        if mod == target:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                if g["module_alias"][mod].get(node.value.id) == target and node.attr in consts:
+                    hits.setdefault(node.attr, mod)
+            elif isinstance(node, ast.ImportFrom) and _base_module(node) == _module_name(target):
+                for alias in node.names:
+                    if alias.name in consts:
+                        hits.setdefault(alias.name, mod)
+    return hits
+
+
+def _module_name(path):
+    """``possession/data.py`` -> ``possession.data``."""
+    return path[:-3].replace("/", ".")
+
+
+def exemption_report(root=SOLUTION):
+    """One computed row per exempt module: category, import reachability, label-head reachability.
+
+    ``reachable`` is the strict claim behind ``not shipped``.  ``label_path`` means a function of the
+    module is called from ``pipeline.build_labels`` (the shipped label head), which is the claim
+    behind ``dev harness`` and the opposite of ``report-only``.  ``cli`` marks a ``__main__`` report
+    that runs on a finished artifact instead of being imported.
+    """
+    g = graph(root)
+    imported, parent = reachable_imports(g)
+    called, label_mods = reachable_calls(g)
+    try:
+        exempt = load(root).get("exempt", {})
+    except (OSError, ValueError):
+        return {}
+    report = {}
+    for mod, scope in exempt.items():
+        tree = g["trees"].get(mod)
+        if tree is None:
+            continue
+        assignments = tree_assignments(tree)
+        constants = {a.name: literal(a.value) for a in assignments}
+        literals = {name for name, value in constants.items() if value is not None}
+        reads = (_external_reads(g, root, mod) if scope.get("category") == "loader/parser"
+                 else {})
+        sites = [(src, line, container, kind)
+                 for src, group in g["imports"].items()
+                 for hit, line, container, kind, _ in group if hit == mod]
+        report[mod] = dict(
+            category=scope.get("category"),
+            reachable=mod in imported,
+            label_path=mod in label_mods,
+            imported_on_label=any(
+                (container == "<module>" and (src == ENTRY or src in label_mods))
+                or (src, container) in called
+                for src, line, container, kind in sites),
+            cli=_has_cli(tree),
+            route=_route(parent, mod),
+            import_sites=sites,
+            called_from=sorted("%s:%s" % (m[:-3], f) for m, f in called
+                               if m == mod and (m, f) != LABEL_ROOT),
+            constants=constants,
+            literal_reads={k: v for k, v in reads.items() if k in literals},
+        )
+    return report
+
+
+def exemption_problems(root=SOLUTION, report=None):
+    """Every exemption whose category the import/call graph contradicts, as prose problems."""
+    problems = []
+    for mod, row in (exemption_report(root) if report is None else report).items():
+        cat = row["category"]
+        reads = row["literal_reads"]
+        if cat == "not shipped" and row["reachable"]:
+            problems.append(
+                "exempt module %s claims 'not shipped' but the shipped entry point reaches it: %s "
+                "-- reclassify it (report-only if it only prints) or delete the import"
+                % (mod, row["route"]))
+        elif cat == "report-only":
+            if row["label_path"]:
+                problems.append(
+                    "exempt module %s claims 'report-only' but pipeline.build_labels calls %s on the "
+                    "label path -- report code may not run before the CSV is written"
+                    % (mod, ", ".join(row["called_from"])))
+            elif row["imported_on_label"]:
+                problems.append(
+                    "exempt module %s claims 'report-only' but it is imported %d time(s) on the label "
+                    "path (%s) -- a report module may only be imported from the post-write status path "
+                    "or a non-build caller"
+                    % (mod, len(row["import_sites"]), row["route"]))
+            elif not row["reachable"] and not row["cli"]:
+                problems.append(
+                    "exempt module %s claims 'report-only' but nothing imports it and it has no "
+                    "`if __name__ == '__main__'` report entry -- nothing runs it; use 'not shipped'"
+                    % mod)
+        elif cat == "loader/parser":
+            if not row["label_path"]:
+                problems.append(
+                    "exempt module %s claims 'loader/parser' but the label path never calls into it "
+                    "-- a parser the build does not run is not shipped; use 'not shipped'" % mod)
+            if reads:
+                problems.append(
+                    "exempt module %s claims 'loader/parser' but other modules read its literal "
+                    "constant(s) %s -- a loader's numbers must stay inside its parse functions, or "
+                    "they are decision values"
+                    % (mod, ", ".join("%s (%s)" % (k, v[:-3]) for k, v in sorted(reads.items()))))
+        elif cat == "dev harness" and row["label_path"]:
+            problems.append(
+                "exempt module %s claims 'dev harness' but pipeline.build_labels calls %s -- harness "
+                "code may not run during a build"
+                % (mod, ", ".join(row["called_from"])))
+        elif cat == "perception" and not row["reachable"]:
+            problems.append("exempt module %s claims 'perception' but nothing imports it" % mod)
+    return problems
 
 
 # ------------------------------------------------------------------ rendering
@@ -392,7 +692,7 @@ def counts(manifest):
     return const, fields
 
 
-def render(manifest):
+def render(manifest, root=SOLUTION):
     const, fields = counts(manifest)
     n_const = sum(const.values())
     n_fields = sum(fields.values())
@@ -447,18 +747,37 @@ def render(manifest):
         "(`dproxy`, `ballfree`), and `features`, whose columns feed the ball-free model."
         % sum(1 for m in manifest["modules"]))
     add("")
-    add("Exempt (%d), each named with its justification:" % len(exempt))
+    add("Exempt (%d), each named with its justification. The last column is computed, not claimed: "
+        "the import/call graph from `possession/make_submission.py` is walked, function-local imports "
+        "included (`audio` is imported inside `audio_status_line`). `label path` means a function of "
+        "the module is called from `pipeline.build_labels`; `imported, never called` means the module "
+        "is loaded on the build path but no function of it runs there." % len(exempt))
     add("")
-    add("| module | category | why it holds no shipped decision value |")
-    add("|---|---|---|")
+    add("| module | category | why it holds no shipped decision value | reachability |")
+    add("|---|---|---|---|")
+    try:
+        report = exemption_report(root)
+    except (OSError, ValueError):
+        report = {}
     for mod in sorted(exempt):
         scope = exempt[mod]
-        add("| `%s` | %s | %s |" % (mod, scope.get("category"), _cell(scope.get("why"))))
+        row = report.get(mod, {})
+        if row.get("label_path"):
+            role = "label path"
+        elif row.get("reachable"):
+            role = "imported, never called"
+        elif row.get("cli"):
+            role = "CLI report"
+        else:
+            role = "not reachable"
+        add("| `%s` | %s | %s | %s |" % (mod, scope.get("category"),
+                                         _cell(scope.get("why")), role))
     add("")
     add("`features` is registered rather than exempt because `ballfree` reads its columns: it is the "
         "one E113 perception module on a label path, and B30 folded it in so no exempt module feeds a "
-        "shipped stage. What remains is E113's loader/parser boundary — `data`, `external` and "
-        "`evaluate` — named above and left to a later card.")
+        "shipped stage. The loader/parser boundary — `data`, `external` and `evaluate` — is named "
+        "above: `data` and `external` are proven on the label path with no literal read outside their "
+        "own parse functions, and `evaluate` is proven never called by the label head.")
     add("")
     add("## Fitted on this match without labels")
     add("")
@@ -551,7 +870,7 @@ def main(argv=None):
     if args.write:
         manifest = load(args.root)
         with open(os.path.join(args.root, DOC), "w", encoding="utf-8") as fh:
-            fh.write(render(manifest))
+            fh.write(render(manifest, args.root))
         const, fields = counts(manifest)
         print("wrote %s: %d constants, %d dict fields, %s" % (DOC, sum(const.values()), sum(fields.values()),
                                               ", ".join("%s %d+%d" % (k, const.get(k, 0), fields.get(k, 0)) for k in TAG_KEYS)))
@@ -563,6 +882,9 @@ def main(argv=None):
               % (stats["constants"], stats["fields"], len(problems)))
         print("scope: %d modules discovered, %d registered, %d exempt"
               % (stats["discovered"], stats["modules"], stats["exempt"]))
+        if stats.get("exempt_total"):
+            print("exempt graph: %d/%d exemptions proven against the import call graph"
+                  % (stats["exempt_proven"], stats["exempt_total"]))
         return 1 if problems else 0
     return 0
 

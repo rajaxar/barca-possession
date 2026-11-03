@@ -14,7 +14,7 @@ manual script:
   figure it names is a public figure/placeholder or a local-only path under ``notebooks/figs/``,
   and that the file is tracked by git (a number that is not committed is not reviewable).
 
-``scripts/freeze_check.py`` runs both (checks 10-11) and ``tests/test_freeze_surfaces.py`` runs them
+``scripts/freeze_check.py`` runs both (checks 12-13) and ``tests/test_freeze_surfaces.py`` runs them
 under ``make test``. Neither reads match data and neither writes anything.
 
     cd solution
