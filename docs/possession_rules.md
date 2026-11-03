@@ -134,9 +134,14 @@ change lands in a gate-fired gap, if more than 5% of changes are on ball-present
 possession count grows by more than 36%.
 
 *Why:* the ball-free shape model names the team with the ball 87% of the time on unseen matches, and
-the decoder adds +.005 [.004, .007] on the practice set, positive in 10 of 10 matches. On our match
-only 3.9% of graded frames are eligible, so we expect +.002 to +.005; with the gate in front it
-rewrites 1.2% of graded frames.
+the decoder added +.005 [.004, .007] on the practice set when it landed, positive in 10 of 10 matches.
+**On the final stack its measured contribution is smaller: removing it changes the score by −.001
+[−.003, +.001], negative in 8 of 10 matches.** The short-hidden-stoppage rule now claims most of the
+stoppages this decoder used to find, and what remains re-decodes live play, adding about 730 very short
+spells that break more real possessions than they recover. It stays because the effect is inside the
+noise band and the ball-free evidence is the thing that makes the hidden-ball stretches legible at all —
+not because it still earns five thousandths. On our match only 3.9% of graded frames are eligible, so
+its reach was always small; with the gate in front it rewrites 1.2% of graded frames.
 
 ### 5d. Inside a gap the gate left alone, a sustained dead probability is a stoppage
 
