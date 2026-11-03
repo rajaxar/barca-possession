@@ -592,6 +592,22 @@ def whistle_events(video=None, start=0.0, duration=None, cfg=CFG, cache=True, ti
     return Track(ev, True, "ok", video)
 
 
+def require_ok(track, what="audio"):
+    """Return `track.events`, or raise `AudioUnavailable` carrying the decode's reason.
+
+    The contract for every consumer of `whistle_events`: a missing video / ffmpeg / audio stream,
+    or a failed, truncated or timed-out decode, must never be read as "this match had no
+    whistles". `whistle_events` degrades to an empty event list with `ok=False`; a caller that
+    wants that empty list must say so explicitly, and every other caller goes through here and
+    fails loudly. `what` names the consumer in the message, so the log says which cue refused to
+    run. The track is not mutated: `ok`, `reason` and `video` (the source) are kept as returned.
+    """
+    if not track.ok:
+        raise AudioUnavailable(track.reason or "audio_error",
+                               "%s: whistle track not ok" % (what,))
+    return track.events
+
+
 def availability(video=None):
     """Why audio is (or is not) usable, without decoding: ok | no_video | no_ffmpeg | no_audio."""
     try:
