@@ -6,8 +6,9 @@ Anchors: work/DECISIONS.md D-029, work/cards/D05-freeze-final-configuration.md, 
 
 For the planted proofs only, ``python scripts/freeze_check.py --only constant-provenance
 --provenance-root scratch/B29/planted`` runs that one check against a scratch tree, and
-``--only environment --requirements ../scratch/B23/bad-requirements.txt`` runs the environment check
-against a scratch pin file.  Both print PARTIAL and are never a freeze verdict.
+``--only environment --requirements ../scratch/B32/tampered-requirements.txt`` runs the environment
+check against a scratch pin file (whose frozen-record hash therefore differs -- that is the B32
+proof).  Both print PARTIAL and are never a freeze verdict.
 
 Checks, in order:
 
@@ -15,13 +16,19 @@ Checks, in order:
    ``HEAD`` is a **warning**, not a failure: D-029 allows a docs-only follow-up while the rebuilt
    CSV is still ``ee7b5b6b...46d8``, and the sha check below is the gate that decides.
 2. the frozen environment -- D-029 freezes Python **3.13.5** and **34 hash-pinned requirements**.  The
-   interpreter's ``major.minor.micro`` must match, and every package in ``requirements.txt`` must be
+   pin file is also the comparison input, so B32 freezes *its* bytes: ``requirements.txt``'s sha256
+   and ``pyproject.toml``'s canonical dependency section (the ``>=3.13`` floor and the setuptools
+   build pin) must match constants in this script before anything is compared.  A changed record
+   fails as an S02/D-029 reopening, not as environment drift.  Then the interpreter's
+   ``major.minor.micro`` must match, and every package in ``requirements.txt`` must be
    installed in the active environment at the pinned version, compared by normalized name + version
    through ``importlib.metadata`` (never a text diff).  A missing pin counts as a mismatch.  It
-   prints one line -- Python version, pins checked, mismatches -- and runs before the builds, so a
-   drifted numpy/scikit-learn fails in ~0.2 s instead of after three minutes.  **Hard failure by
-   default**; ``--allow-env-drift`` is the documented opt-out for a reviewer's knowingly different
-   machine (it still prints every mismatch and says the run is not an environment verdict).
+   prints the record fingerprints and one line -- Python version, pins checked, mismatches -- and
+   runs before the builds, so a drifted numpy/scikit-learn fails in ~0.2 s instead of after three
+   minutes.  **Hard failure by default**; ``--allow-env-drift`` is the documented opt-out for a
+   reviewer's knowingly different machine (it still prints every mismatch and says the run is not
+   an environment verdict).  It does **not** cover a changed record: regenerating the pins stays a
+   hard failure.
 3. ``scripts/constant_provenance.py --check`` (E113/B29/B30): every module-level constant and every
    string-keyed dict field in a registered module carries exactly one provenance tag in
    ``docs/constant_provenance.json``, no value has drifted from the register, ``scaffold`` hides
@@ -63,11 +70,13 @@ import contextlib
 import csv
 import hashlib
 import io
+import json
 import os
 import re
 import subprocess
 import sys
 import time
+import tomllib
 from importlib import metadata
 
 SOLUTION = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -82,6 +91,14 @@ FROZEN_X = 40462
 FROZEN_LABELS = collections.OrderedDict([("H", 50478), ("A", 35720), ("D", 72659), ("X", 40462)])
 FROZEN_PYTHON = "3.13.5"
 FROZEN_PINS = 34
+# B32: the pin file is the freeze record, so its bytes are frozen too.  `requirements.txt` is both
+# the record and the environment check's input; without this anchor, edit a pin + reinstall and both
+# sides move together (34 pins, 0 mismatches, a changed environment).  A deliberate regeneration is
+# an S02/D-029 reopening and must update these constants.
+FROZEN_REQUIREMENTS_SHA = "f35b34af857bf4bd773b62a22e71385c3d154a5aa0235ea9f102fb3630c98092"
+# pyproject.toml's dependency section only: the `>=3.13` floor, the setuptools build pin and the
+# (empty) runtime dependency list, fingerprinted canonically so formatting cannot move it.
+FROZEN_PYPROJECT_DEPS_SHA = "bcf074bbcf6d4721af931774185f4078e385302bbaedb0a18c7eb80d29123233"
 TAG = "final-candidate"
 
 
@@ -228,22 +245,92 @@ def read_pins(path):
     return pins
 
 
+def dependency_section(path):
+    """Canonical ``pyproject.toml`` dependency section and its sha256 (B32).
+
+    Only the declarations that decide the environment are read: the build requirement, the Python
+    floor and the runtime dependency list.  Formatting and comment edits cannot move the
+    fingerprint; a changed floor or build pin does.
+    """
+    with open(path, "rb") as fh:
+        data = tomllib.load(fh)
+    section = collections.OrderedDict([
+        ("build-system.requires", data.get("build-system", {}).get("requires")),
+        ("project.dependencies", data.get("project", {}).get("dependencies")),
+        ("project.requires-python", data.get("project", {}).get("requires-python")),
+    ])
+    blob = json.dumps(section, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return section, hashlib.sha256(blob).hexdigest()
+
+
+def check_frozen_record(path):
+    """B32: the pin file is the freeze record, so its bytes are frozen too.
+
+    B23 compares the installed set against the pins, but ``requirements.txt`` is also that
+    comparison's input: edit a pin, reinstall the matching version, and both sides move together --
+    the check reports 0 mismatches on a changed environment.  The sha256 below is the anchor the
+    file itself cannot move, so regenerating the pins is a deliberate act.  Hard failure:
+    ``--allow-env-drift`` does not apply, because a changed record is a freeze change, not a
+    difference between machines.
+    """
+    digest = sha256(path)
+    rel = os.path.relpath(path)
+    if digest != FROZEN_REQUIREMENTS_SHA:
+        raise Failure(
+            "the pin file itself changed: %s is sha256 %s,\n"
+            "  but the D-029 freeze (B32) records solution/requirements.txt as %s.\n"
+            "  requirements.txt is the freeze record, not just the comparison input: edit a pin and\n"
+            "  reinstall the matching version and the pins and the installed set move together, so\n"
+            "  the installed-vs-pinned comparison still reports 0 mismatches on a changed\n"
+            "  environment. Regenerating the pins is an S02/D-029 reopening, not a routine edit: it\n"
+            "  needs a new decision, a re-run of Q04, and a re-checked CSV sha256. The freeze is\n"
+            "  %s today,\n"
+            "  and it is not assumed to survive the reinstall. If that is the intent, update\n"
+            "  FROZEN_REQUIREMENTS_SHA deliberately; nothing was repaired by this check."
+            % (rel, digest, FROZEN_REQUIREMENTS_SHA, FROZEN_SHA))
+    print("  ok   record             %s sha256 %s (frozen)" % (rel, short(digest)))
+
+    pyproject = os.path.join(SOLUTION, "pyproject.toml")
+    if not os.path.isfile(pyproject):
+        raise Failure("missing %s; the D-029 Python floor and build pin cannot be asserted (B32)."
+                      % pyproject)
+    section, section_sha = dependency_section(pyproject)
+    if section_sha != FROZEN_PYPROJECT_DEPS_SHA:
+        raise Failure(
+            "pyproject.toml's dependency section changed: %s is sha256 %s,\n"
+            "  but the D-029 freeze (B32) records it as %s.\n"
+            "  The section is %s.\n"
+            "  The Python floor and the setuptools build pin are part of the frozen environment.\n"
+            "  Changing them is an S02/D-029 reopening, not a routine edit: it needs a new decision,\n"
+            "  a re-run of Q04, and a re-checked CSV sha256 (the freeze is %s today). If that is the\n"
+            "  intent, update FROZEN_PYPROJECT_DEPS_SHA deliberately; nothing was repaired."
+            % (os.path.relpath(pyproject), section_sha, FROZEN_PYPROJECT_DEPS_SHA,
+               json.dumps(section, sort_keys=True), FROZEN_SHA))
+    print("  ok   record             pyproject deps sha256 %s (floor %s, build %s)"
+          % (short(section_sha), section["project.requires-python"],
+             ", ".join(section["build-system.requires"] or [])))
+
+
 def check_environment(requirements=None, allow_drift=False):
     """B23: D-029's Python 3.13.5 and 34 hash-pinned requirements are part of the freeze.
 
     Compare by normalized package name + version through ``importlib.metadata`` -- the same
     semantics ``pip check`` uses -- not by a text diff of ``requirements.txt``.  A missing pin is a
     mismatch, and a shrunken/duplicated pin file fails before any comparison, so the check cannot
-    pass vacuously.  It is offline, installs and repairs nothing, and runs before the builds so
-    drift fails in ~0.2 s rather than after three minutes.  Hard failure by default; the
-    documented ``--allow-env-drift`` opt-out still prints every mismatch, then continues with a
-    warning that the run is not an environment verdict.
+    pass vacuously.  B32 anchors the record itself: the pin file's sha256 and ``pyproject.toml``'s
+    dependency section must match frozen constants, so a changed pin file fails even when the
+    installed set was reinstalled to match it.  It is offline, installs and repairs nothing, and
+    runs before the builds so drift fails in ~0.2 s rather than after three minutes.  Hard failure
+    by default; the documented ``--allow-env-drift`` opt-out still prints every mismatch, then
+    continues with a warning that the run is not an environment verdict.  That flag never covers a
+    changed record.
     """
     print("== 2/13 frozen environment")
     path = os.path.abspath(requirements or os.path.join(SOLUTION, "requirements.txt"))
     if not os.path.isfile(path):
         raise Failure("requirements file not found at %s; the D-029 environment cannot be asserted."
                       % path)
+    check_frozen_record(path)
     pins = read_pins(path)
     if len(pins) != FROZEN_PINS:
         raise Failure("%s holds %d pins, but the D-029 freeze names %d hash-pinned requirements. "
@@ -718,7 +805,8 @@ def main(argv=None):
                          "docs/constant_provenance.json instead of solution/")
     ap.add_argument("--requirements", default=None,
                     help="with --only environment, read this hash-locked pin file instead of "
-                         "solution/requirements.txt (planted proof; does not install anything)")
+                         "solution/requirements.txt (planted proof; its bytes will not match the "
+                         "frozen record hash and the check says so; installs nothing)")
     ap.add_argument("--allow-env-drift", action="store_true",
                     help="downgrade a Python/package version mismatch to a warning for a reviewer's "
                          "knowingly different machine; every mismatch is still printed and the CSV "
