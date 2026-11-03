@@ -26,6 +26,14 @@ A frame is proxy-``D`` iff
 with ungraded frames and the published forced-D 2H pre-kickoff block never in the mask
 (``structure.forced_dead_mask``; both are D by structure, not by evidence).
 
+The exclusion is imported, never reimplemented: ``info["gk_source"]`` must read
+``"gk_possession"``. If that module cannot be **imported**, the missing-ball proxy falls back to a
+narrow inline gathered-branch copy under ``gk_source="inline"`` and the present-ball proxy applies
+no veto under ``gk_source="unavailable"`` -- in both cases it prints a ``WARNING [dproxy]`` line and
+stores the same text in ``info["gk_note"]``. A detector *bug* propagates instead of being
+substituted: swallowing every exception is how B10's array-end IndexError hid from these
+diagnostics. A consumer that uses the exclusion should assert the source.
+
 Both thresholds are inherited, not fitted:
 
 * **2 s duration floor** -- E25's external-trained classifier gives P(D | missing run) of
@@ -185,6 +193,7 @@ Refusals (all before any statistic is computed, so they cannot be negotiated aft
 Blocks for the bootstrap are maximal runs of constant proxy state inside a half, so a draw is a
 contiguous stretch of match, not a frame. Seeds are fixed (``SEED``), so a report is reproducible.
 """
+import sys
 import warnings
 from collections import namedtuple
 
@@ -319,9 +328,11 @@ def _inline_gk(match, st, params):
 
     TODO(S22): this duplicates gk_possession.detect's gathered branch and is deliberately narrow --
     a short (<=6 s) ball-missing gap that starts within 2 m of a plausible keeper slot after
-    continuously tracked play and ends with a fast return. It exists so the proxy keeps its
-    exclusion if the module is unavailable, not to replace E38. The carry branch cannot overlap the
-    proxy at all (the ball is present by construction), so it is not reimplemented here.
+    continuously tracked play and ends with a fast return. It is deliberately narrower than E38:
+    on BAR-ATH it found 0 of the real detector's 1,252 exclusion frames (B21), so it is a
+    degraded-exclusion fallback, not a replacement, and it always reports ``gk_source="inline"``.
+    The carry branch cannot overlap the proxy at all (the ball is present by construction), so it
+    is not reimplemented here.
     """
     n = len(match.B)
     half, P, B = match.half, match.P, match.B
@@ -349,20 +360,44 @@ def _inline_gk(match, st, params):
     return out
 
 
+def _gk_fallback_note(target, exc, consequence):
+    """Loud, recorded notice that the keeper exclusion is not the real detector.
+
+    Silent substitution is how B10's array-end bug hid: the proxy caught every exception and kept
+    returning an exclusion mask from a copy. A missing module is the only legitimate fallback, so
+    the fallback prints a status line and stores the same text in ``info["gk_note"]``.
+    """
+    note = ("%s keeper exclusion is NOT possession.gk_possession (%s: %s); %s"
+            % (target, type(exc).__name__, exc, consequence))
+    print("WARNING [dproxy] " + note, file=sys.stderr, flush=True)
+    return note
+
+
+def _import_gk():
+    """Import E38's detector. A separate seam so the missing-module path is testable."""
+    from . import gk_possession
+    return gk_possession
+
+
 def _gk_live(match, st, params):
-    """(N,) bool of goalkeeper-in-possession frames, plus the source label.
+    """(N,) bool of goalkeeper-in-possession frames, the source label and a fallback note.
 
     E38's detector is the real thing; the inline fallback is only for a missing module and says so.
+    Any other exception from the detector (a bug, not an absent module) propagates: a silent inline
+    mask is exactly what hid B10's IndexError from the dev diagnostics.
     """
     if not params["exclude_gk"]:
-        return np.zeros(len(match.B), bool), "disabled"
+        return np.zeros(len(match.B), bool), "disabled", None
     try:
-        from . import gk_possession as gk
-        gp = gk.detect(match, st, events=np.zeros(0),
-                       params={"include_gathered": bool(params["gk_include_gathered"])})
-        return np.asarray(gp.live) > 0, "gk_possession"
-    except Exception:  # missing module / unexpected failure: keep the exclusion, never crash
-        return _inline_gk(match, st, params), "inline"
+        gk = _import_gk()
+    except ImportError as exc:
+        note = _gk_fallback_note(
+            "missing-ball", exc,
+            "falling back to the inline gathered-branch copy (gk_source='inline')")
+        return _inline_gk(match, st, params), "inline", note
+    gp = gk.detect(match, st, events=np.zeros(0),
+                   params={"include_gathered": bool(params["gk_include_gathered"])})
+    return np.asarray(gp.live) > 0, "gk_possession", None
 
 
 # ================================================================ the proxy
@@ -394,7 +429,7 @@ def proxy(match, st=None, params=None):
     speed = mean_player_speed(match, p["speed_clip"])
     still = np.isfinite(speed) & (speed < p["still_v"])
 
-    gk_live, gk_source = _gk_live(match, st, p)
+    gk_live, gk_source, gk_note = _gk_live(match, st, p)
 
     # Missing runs: contiguous missing frames inside one half. A half boundary, the forced-D block
     # or any ungraded frame ends a run, so nothing is ever carried across structure. `missing` is
@@ -445,7 +480,7 @@ def proxy(match, st=None, params=None):
     info = dict(
         kind="missing",   # E42: which ball state this target sees; adoption_report switches on it
         params=p, min_run_s=p["min_run_s"], still_v=p["still_v"], speed_clip=p["speed_clip"],
-        run_gate=p["run_gate"], gk_source=gk_source,
+        run_gate=p["run_gate"], gk_source=gk_source, gk_note=gk_note,
         n_missing_runs=len(missing_runs),
         n_qualifying_runs=int(sum(m["qualifies"] for m in missing_runs)),
         n_missing_frames=n_missing, n_proxy_frames=int(mask.sum()), n_proxy_runs=len(runs),
@@ -569,16 +604,19 @@ def pitch_context(match, st):
 
 
 def _present_gk_live(match, st, p):
-    """E38 keeper-in-possession mask, imported (never reimplemented). Returns (mask, source)."""
+    """E38 keeper-in-possession mask, imported (never reimplemented). Returns (mask, source, note)."""
     if not p["exclude_gk"]:
-        return np.zeros(len(match.B), bool), "disabled"
+        return np.zeros(len(match.B), bool), "disabled", None
     try:
-        from . import gk_possession as gk
-        gp = gk.detect(match, st, events=np.zeros(0),
-                       params={"include_gathered": True})   # gathered cannot fire: ball is present
-        return np.asarray(gp.live) > 0, "gk_possession"
-    except Exception:  # missing module: keep the proxy usable, but say so loudly in info
-        return np.zeros(len(match.B), bool), "unavailable"
+        gk = _import_gk()
+    except ImportError as exc:  # no inline equivalent: the carry branch has no copy here
+        note = _gk_fallback_note(
+            "present-ball", exc,
+            "no keeper veto is applied (gk_source='unavailable'), so keeper-hold runs stay candidates")
+        return np.zeros(len(match.B), bool), "unavailable", note
+    gp = gk.detect(match, st, events=np.zeros(0),
+                   params={"include_gathered": True})   # gathered cannot fire: ball is present
+    return np.asarray(gp.live) > 0, "gk_possession", None
 
 
 def _run_meta(a, b, vball, speed, near_m, ctx, p):
@@ -636,7 +674,7 @@ def present_ball(match, st=None, params=None):
     vball = _roll_median(_robust_ball_speed(B, p["base_s"]), BALL_MED_F)
     near_m = nearest_player_m(match)
     ctx = pitch_context(match, st)
-    gk_live, gk_source = _present_gk_live(match, st, p)
+    gk_live, gk_source, gk_note = _present_gk_live(match, st, p)
 
     # ---- the frozen ball-state half of the rule (used as the ablation base for this target)
     ball_rest = graded & present & np.isfinite(vball) & (vball <= p["ball_still_v"])
@@ -682,7 +720,7 @@ def present_ball(match, st=None, params=None):
         kind="present",
         params=p, min_hold_s=p["min_hold_s"], ball_still_v=p["ball_still_v"],
         still_v=p["still_v"], near_player_m=p["near_player_m"],
-        gk_source=gk_source,
+        gk_source=gk_source, gk_note=gk_note,
         n_static_runs=len(static_runs), n_qualifying_runs=int(sum(s["qualifies"]
                                                                  for s in static_runs)),
         n_present_frames=n_present, n_ball_rest_frames=int(ball_rest.sum()),

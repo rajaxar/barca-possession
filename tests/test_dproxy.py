@@ -1,5 +1,8 @@
 """Tests for possession.dproxy (S22): the label-free D proxy and the adoption protocol."""
+import contextlib
+import io
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -181,6 +184,60 @@ class GoalkeeperExclusion(unittest.TestCase):
         m, fm = _make(speed_fn=lambda f: 1.0, missing_fn=_gap(300, 400))
         st = _st(fm)
         self.assertEqual(dproxy.proxy(m, st, dict(exclude_gk=False)).info["gk_source"], "disabled")
+
+
+class GkSourceContract(unittest.TestCase):
+    """B21: name the real detector, and never fall back silently."""
+
+    @staticmethod
+    def _match():
+        m, fm = _make(speed_fn=lambda f: 1.0, missing_fn=_gap(300, 400))
+        return m, _st(fm)
+
+    def test_real_detector_is_used_and_reported(self):
+        from possession import gk_possession
+        m, st = self._match()
+        calls = []
+        real = gk_possession.detect
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs.get("params", {}))
+            return real(*args, **kwargs)
+
+        with mock.patch.object(gk_possession, "detect", side_effect=spy):
+            dp = dproxy.proxy(m, st, dict(exclude_gk=True))
+            pb = dproxy.present_ball(m, st, dict(exclude_gk=True))
+        # Both proxies must report the imported module, not the inline copy / "unavailable".
+        self.assertEqual(dp.info["gk_source"], "gk_possession")
+        self.assertEqual(pb.info["gk_source"], "gk_possession")
+        self.assertIsNone(dp.info["gk_note"])
+        self.assertIsNone(pb.info["gk_note"])
+        self.assertEqual(len(calls), 2)      # the real detect() ran once per proxy
+
+    def test_missing_module_falls_back_loudly_and_records_it(self):
+        m, st = self._match()
+        err = io.StringIO()
+        with mock.patch.object(dproxy, "_import_gk", side_effect=ImportError("no gk module")), \
+                contextlib.redirect_stderr(err):
+            dp = dproxy.proxy(m, st, dict(exclude_gk=True))
+            pb = dproxy.present_ball(m, st, dict(exclude_gk=True))
+        self.assertEqual(dp.info["gk_source"], "inline")
+        self.assertEqual(pb.info["gk_source"], "unavailable")
+        self.assertIn("no gk module", dp.info["gk_note"])
+        self.assertIn("no gk module", pb.info["gk_note"])
+        text = err.getvalue()
+        self.assertIn("WARNING [dproxy]", text)
+        self.assertIn("gk_source='inline'", text)
+        self.assertIn("gk_source='unavailable'", text)
+
+    def test_detector_bug_is_not_swallowed(self):
+        from possession import gk_possession
+        m, st = self._match()
+        with mock.patch.object(gk_possession, "detect", side_effect=IndexError("array end")):
+            with self.assertRaises(IndexError):
+                dproxy.proxy(m, st, dict(exclude_gk=True))
+            with self.assertRaises(IndexError):
+                dproxy.present_ball(m, st, dict(exclude_gk=True))
 
 
 # ------------------------------------------------------------------ adoption protocol tests
