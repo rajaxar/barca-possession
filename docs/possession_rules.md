@@ -21,9 +21,9 @@ length, and dead-ball frames end a run even when the same team restarts. There i
 constructs possessions directly; they fall out of the label sequence written by
 `possession/make_submission.py::build_labels`.
 
-*Why:* real possessions can be very short — the public five minutes contain a 19-frame (0.76 s) and a
-33-frame (1.32 s) possession, and 5 of 17 are under 4 seconds. Anything that needs a possession to
-last several seconds deletes real ones.
+*Why:* real possessions can be very short — on the practice matches 12.5% of possessions last under a
+second and the median is 3.7 s (S05), with the left tail R08 measures directly. Anything that needs a
+possession to last several seconds deletes real ones.
 
 ## 2. The owner is the team that touched it last, not the team that kept it
 
@@ -55,8 +55,8 @@ it adds no delay. The explicit half-second merge over a list of contacts
 *Why:* single-contact possessions are a real population — 767 of 3,061 practice-match possessions
 (25%) contain exactly one own-team touch, median 2.2 s, and 44% of those are 2 seconds or shorter.
 Possessions started by an opposing touch include 12% of 1 second or less. The merge window is
-deliberately shorter than the shortest possession we must keep (19 frames = 0.76 s), so it cannot
-erase a genuine single-touch possession.
+deliberately shorter than the shortest possession R08's label-side bound says we must keep (1.0 s), so
+it cannot erase a genuine single-touch possession.
 
 ## 4. We do not rebuild possessions from touches
 
@@ -77,17 +77,17 @@ an oracle restart owner loses .13.
 ## 5. Dead ball, and what we do inside a ball-missing stretch
 
 A dead ball is a referee stoppage, not a geometry fact. A frame is `D` from the moment play stops
-(ball out, foul, offside, goal, injury, cooling break) until the restart is taken. Only 1 of 4 public
-dead stretches begins at a line crossing; one begins 3 seconds before the ball leaves the pitch, and
-one begins with the ball on the pitch and then invisible for 6 seconds. We label `D`; we never label
-who owns a dead ball, because the organizers do not ask.
+(ball out, foul, offside, goal, injury, cooling break) until the restart is taken. The Law stops play for reasons that are not geometric — a foul, an offside, an injury — and the ball
+is often still on the pitch; on the practice matches only about a third of dead-ball onsets coincide
+with an out-of-bounds event (E25). We label `D`; we never label who owns a dead ball, because the
+organizers do not ask.
 
 *In the code:* `baseline_plus.py::_dead_mask` starts `D` on a debounced ball excursion beyond the
 pitch (0.5 m margin, 6 frames) and ends it at the first sustained in-pitch ball movement (3 m/s for 10
 frames). Everything else is added by the four rules below.
 
-*Why:* dead stretches are 5 to 20 seconds in the public five minutes, so their edges are cheap and
-their existence is not: a missing dead stretch joins two possessions into one, and a spurious one
+*Why:* dead stretches run from a few seconds to two minutes on the practice matches (E39), so their
+edges are cheap and their existence is not: a missing dead stretch joins two possessions into one, and a spurious one
 splits a possession in two and costs a false positive as well.
 
 ### 5a. A long ball-missing stretch is a stoppage
