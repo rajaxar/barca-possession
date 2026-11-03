@@ -13,11 +13,13 @@ Checks, in order:
 1. git identity -- HEAD, the local tag ``final-candidate`` and the files that differ.  A post-freeze
    ``HEAD`` is a **warning**, not a failure: D-029 allows a docs-only follow-up while the rebuilt
    CSV is still ``ee7b5b6b...46d8``, and the sha check below is the gate that decides.
-2. ``scripts/constant_provenance.py --check`` (E113/B29): every module-level constant and every
-   string-keyed dict field in the shipped path carries exactly one provenance tag in
-   ``docs/constant_provenance.json``, no value has drifted from the register, and ``scaffold`` hides
-   no literal.  It runs before the builds, so a silent retune that leaves the CSV untouched fails in
-   about a tenth of a second instead of after three minutes.  A missing register is a clean skip:
+2. ``scripts/constant_provenance.py --check`` (E113/B29/B30): every module-level constant and every
+   string-keyed dict field in a registered module carries exactly one provenance tag in
+   ``docs/constant_provenance.json``, no value has drifted from the register, ``scaffold`` hides
+   no literal, every entry's ``line`` matches the AST, and every ``possession/*.py`` is either
+   registered or named as exempt with a reason (the scope is discovered, not listed).  It runs
+   before the builds, so a silent retune that leaves the CSV untouched fails in about a tenth of a
+   second instead of after three minutes.  A missing register is a clean skip:
    the register is tracked, but a tree that ships only the build must still be checkable.
 3. two independent ``possession.make_submission`` builds -- the first at the canonical
    ``outputs/submission.csv``, the second in ``scratch/B18/`` -- compared byte for byte.

@@ -26,7 +26,7 @@ FORBIDDEN_CITATIONS = ("ground truth", "ground-truth", "public window", "public 
 
 
 def copy_tree(dst):
-    for mod in cp.MODULES:
+    for mod in cp.discovered(SOLUTION):
         path = os.path.join(dst, mod)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         shutil.copyfile(os.path.join(SOLUTION, mod), path)
@@ -36,6 +36,11 @@ def copy_tree(dst):
 
 def append(dst, mod, text):
     with open(os.path.join(dst, mod), "a", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def plant_module(dst, name, text):
+    with open(os.path.join(dst, "possession", name), "w", encoding="utf-8") as fh:
         fh.write(text)
 
 
@@ -122,8 +127,33 @@ class ConstantProvenance(unittest.TestCase):
         self.assertEqual(bad, [], "a constant is justified by this match's answers:\n  " + "\n  ".join(bad))
 
 
+class ScopeIsDiscovered(unittest.TestCase):
+    """The module scope is the filesystem, not a list: every file is registered or named as exempt."""
+
+    def test_every_shipped_module_is_registered_or_exempt(self):
+        manifest = cp.load()
+        present = set(cp.discovered())
+        registered = set(manifest["modules"])
+        exempt = set(manifest["exempt"])
+        self.assertEqual(registered & exempt, set(), "a module is both registered and exempt")
+        self.assertEqual(present - registered - exempt, set(),
+                         "modules on disk that the register neither tags nor exempts")
+        self.assertEqual(registered - present, set(), "registered modules that are not on disk")
+        self.assertEqual(exempt - present, set(), "stale exemptions")
+
+    def test_every_exemption_is_justified(self):
+        for mod, scope in cp.load()["exempt"].items():
+            self.assertIn(scope.get("category"), cp.EXEMPT_CATEGORIES, mod)
+            self.assertTrue(scope.get("why", "").strip(), "%s has no justification" % mod)
+
+    def test_every_registered_entry_records_its_line(self):
+        for mod, entry in cp.load()["modules"].items():
+            for name, c in entry["constants"].items():
+                self.assertIsInstance(c.get("line"), int, "%s:%s has no line" % (mod, name))
+
+
 class GuardDetects(unittest.TestCase):
-    """The register check fires on planted constants, fields, values and scaffold abuse."""
+    """The register check fires on planted constants, fields, values, scaffold abuse and scope gaps."""
 
     def test_planted_untagged_constant_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,6 +196,54 @@ class GuardDetects(unittest.TestCase):
             save_manifest(tmp, manifest)
             problems = cp.check(tmp)
             self.assertTrue(any("PLANTED_HIDDEN" in p and "scaffold" in p for p in problems),
+                            "\n".join(problems))
+
+    def test_planted_new_module_fails_until_registered(self):
+        """A new possession/*.py is a scope decision: it fails until the register names it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_tree(tmp)
+            self.assertEqual(cp.check(tmp), [], "the copied tree must start clean")
+            plant_module(tmp, "newstage.py", '"""Planted stage."""\n\nPLANTED_UNTAGGED = 1234\n')
+            problems = cp.check(tmp)
+            hits = [p for p in problems if "unregistered module" in p]
+            self.assertTrue(hits, "a new module was not flagged:\n" + "\n".join(problems))
+            self.assertIn("unregistered module: possession/newstage.py", hits[0])
+            self.assertIn("1 module-level constant", hits[0])
+
+    def test_planted_new_module_registered_still_needs_its_constants(self):
+        """Registering the module does not tag the constant; the second failure names file:line."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_tree(tmp)
+            plant_module(tmp, "newstage.py", '"""Planted stage."""\n\nPLANTED_UNTAGGED = 1234\n')
+            manifest = reload_manifest(tmp)
+            manifest["modules"]["possession/newstage.py"] = {"constants": {}}
+            save_manifest(tmp, manifest)
+            problems = cp.check(tmp)
+            hits = [p for p in problems if "PLANTED_UNTAGGED" in p]
+            self.assertTrue(hits, "the registered-but-untagged constant was not flagged:\n"
+                            + "\n".join(problems))
+            self.assertIn("untagged constant: possession/newstage.py:3", hits[0])
+
+    def test_planted_moved_constant_reports_the_new_line(self):
+        """A constant that moves fails with the line the AST now reports, so the fix is one edit."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_tree(tmp)
+            edit(tmp, "possession/dgate.py", "\nTF = 50", "\n# planted move\nTF = 50")
+            problems = cp.check(tmp)
+            hits = [p for p in problems if p.startswith("stale line: possession/dgate.py:TF")]
+            self.assertTrue(hits, "a moved constant was not flagged:\n" + "\n".join(problems))
+            self.assertIn("is at line 32", hits[0])
+            self.assertIn("register records 31", hits[0])
+            self.assertIn('"line" to 32', hits[0])
+
+    def test_planted_stale_exemption_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_tree(tmp)
+            manifest = reload_manifest(tmp)
+            manifest["exempt"]["possession/gone.py"] = dict(category="not shipped", why="planted")
+            save_manifest(tmp, manifest)
+            problems = cp.check(tmp)
+            self.assertTrue(any("stale exemption: possession/gone.py" in p for p in problems),
                             "\n".join(problems))
 
 

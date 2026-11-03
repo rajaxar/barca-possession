@@ -6,7 +6,7 @@ Generated from [`constant_provenance.json`](constant_provenance.json) by `script
 
 > Is any constant trained, fitted, tuned or calibrated on the wrong data?
 
-Every module-level assignment in the shipped path carries exactly one tag below. The tag says what the constant may be justified by. `match` is the only class that is measured on this match, and it is **label-free**: no possession label, no hand label and no video enters it. No constant in the register is tagged with this match's ground truth or with the public 5 minutes, because no such constant exists (Q36/Q37).
+Every module-level assignment in a registered module carries exactly one tag below. The tag says what the constant may be justified by. `match` is the only class that is measured on this match, and it is **label-free**: no possession label, no hand label and no video enters it. No constant in the register is tagged with this match's ground truth or with the public 5 minutes, because no such constant exists (Q36/Q37). Every other module is exempt with a reason in [Scope](#scope), including the loader/parser boundary still to be registered.
 
 ## Tag vocabulary
 
@@ -24,20 +24,43 @@ Every module-level assignment in the shipped path carries exactly one tag below.
 
 | tag | constants | dict fields |
 |---|---:|---:|
-| `external` | 51 | 25 |
+| `external` | 55 | 25 |
 | `structure` | 18 | 9 |
-| `physical` | 9 | 12 |
+| `physical` | 12 | 12 |
 | `match` | 7 | 50 |
 | `video` | 0 | 2 |
-| `guard` | 20 | 1 |
-| `scaffold` | 7 | 0 |
-| **total** | **112** | **99** |
+| `guard` | 23 | 1 |
+| `scaffold` | 8 | 0 |
+| **total** | **123** | **99** |
 
 Dict-valued constants (the degrader's `PARAMS`, the proxies' parameter sets) expose their keys as field rows: the container carries a role tag and every value carries its own.
 
 ## Scope
 
-Twelve modules: the stage writers (`pipeline` holds no constant), the training-data simulator, `config`, and the two modules whose constants a shipped stage reads (`dproxy`, `ballfree`). Out of scope by design: loaders and providers (`data`, `external`, `evaluate`) hold parsing and cache-format constants, and the feature builder (`features`) holds perception constants; they are checked by their own tests and are proposed for a later card.
+The scope is **discovered, not listed in code**: every `possession/*.py` except `__init__.py` is either registered above (every module-level assignment carries a tag) or exempted below with a reason. `scripts/constant_provenance.py` fails on a module in neither, on a registered constant that is not at the line recorded here, and on a stale exemption. A new module therefore cannot pass unseen, and a new constant cannot arrive untagged.
+
+Registered (14): the stage writers (`pipeline` and `make_submission` declare no constant), the training-data simulator, `config`, the modules a shipped stage reads values from (`dproxy`, `ballfree`), and `features`, whose columns feed the ball-free model.
+
+Exempt (14), each named with its justification:
+
+| module | category | why it holds no shipped decision value |
+|---|---|---|
+| `possession/audio.py` | report-only | Referee-whistle decoder (31 constants). `make_submission` imports it only to print the after-the-write `audio: ok\|reason` line, which cannot change the CSV or the exit code (S26) — so it runs during the build but never writes a label. Reclassified from 'not shipped', which was false. |
+| `possession/clean.py` | not shipped | Label-free tracking cleaner used by research scripts (3 constants). The shipped pipeline reads the raw ATD through data.load_match, so no cleaning default can move a label. |
+| `possession/data.py` | loader/parser | ATD and Smart-Tagging loader: array layout, chunk sizes, pitch defaults and column codes (7 constants). It reads and reshapes provider files and holds no decision value; E113 left loader/parser constants to a later card. |
+| `possession/deadball.py` | not shipped | E07's dead-ball sharpeners, all default-off and tier 2 (18 constants). pipeline.py states it is not imported by construction; the primary whole-gap rule lives in the registered dgate. |
+| `possession/dev_v1.py` | dev harness | The D-022 dev-v1 harness: games, seeds, cells and bootstrap draws (27 constants). It defines the measurement, never the build, and the build never imports it. |
+| `possession/diagnostics.py` | report-only | E105 ball-in-play diagnostics with an explicit playing clock (4 constants). It reads the frozen CSV and prints; it sets nothing. |
+| `possession/evaluate.py` | dev harness | Adapts predictions and references to the organizer metric, pools games and computes CIs (4 constants). Scoring only: nothing here writes a label, and the build imports it only through external's cache checks. |
+| `possession/external.py` | loader/parser | IDSSE/SkillCorner loaders, cache version and provider flight filters (14 constants). They select and clean the external training games; the build never uses them to set a label. E113 left loader/parser constants to a later card. |
+| `possession/gk_possession.py` | report-only | E38 keeper-in-possession detector (23 constants). dproxy calls it for a report-only keeper table; its mask never writes a label, and growd inherits only dproxy's own three values. |
+| `possession/hsmm.py` | not shipped | E09 HSMM/Viterbi decoder arm, dropped by D-028 (7 constants). pipeline.py does not import it. |
+| `possession/render.py` | not shipped | Top-down clip renderer for figures and the notebook (13 constants). Nothing on the CSV path imports it. |
+| `possession/spells_from_events.py` | not shipped | E03 event-first decoder behind the closed touch arm (4 constants). pipeline.py does not import it. |
+| `possession/supervised.py` | not shipped | E10 learned frame model, not shipped and not imported by make_submission (12 constants). Its own docstring records the status. |
+| `possession/touches.py` | not shipped | E02 ball-touch detector behind the closed event-first arm (3 constants). Nothing on the CSV path imports it. |
+
+`features` is registered rather than exempt because `ballfree` reads its columns: it is the one E113 perception module on a label path, and B30 folded it in so no exempt module feeds a shipped stage. What remains is E113's loader/parser boundary — `data`, `external` and `evaluate` — named above and left to a later card.
 
 ## Fitted on this match without labels
 
@@ -127,6 +150,13 @@ No guard selects a label: each raises, clips or refuses, so a guard can only sto
 ### `possession/pipeline.py`
 
 Stage order only; it declares no constant (0 entries).
+
+| constant | value | tag | source | why |
+|---|---|---|---|---|
+
+### `possession/make_submission.py`
+
+The CLI entry point. It declares no constant; the optional audio status line is printed after the CSV is written and cannot change it (S26).
 
 | constant | value | tag | source | why |
 |---|---|---|---|---|
@@ -324,6 +354,24 @@ P(H) model; shipped only through ingap's sampling constants.
 | `TEAM_COLS` | `(tracked_count, centroid_attack_x_m, centroid_y_m, ..., pressing_mps)` | `external` | E04 feature list | the ball-free columns the model may read |
 | `FORBIDDEN_PREFIXES` | `('ball_', 'home_ball', 'away_ball', 'camera', 'attacker_tag', 'set_piece')` | `guard` | E04/D-028 leak guard | ball/camera/tag column prefixes the ball-free model must never read |
 
+### `possession/features.py`
+
+The label-free feature builder read by ballfree, hence ingap's P(H); E113 left it to E114 and B30 registered it because it sits on the label path.
+
+| constant | value | tag | source | why |
+|---|---|---|---|---|
+| `FEATURE_VERSION` | `'v2'` | `external` | E16 (features v2) | Feature-set/cache version; it invalidates the cached feature table and never selects a label. |
+| `NEIGHBORS` | `3` | `external` | E16 feature design | Three nearest players per team feed the distance and relative-speed columns. |
+| `RADII_M` | `(1, 2, 4, 8)` | `external` | E16 feature design | Ball-count radii 1, 2, 4 and 8 m. |
+| `MAX_TIME_TO_BALL_S` | `60.0` | `guard` | E16 feature design (clip) | Caps time-to-ball at 60 s so a far player cannot produce an unbounded feature. |
+| `STRAIN_DISTANCE_FLOOR_M` | `0.5` | `guard` | E16 feature design (numerical floor) | Floor in the closing-speed denominator so a 0 m distance cannot blow up. |
+| `PLAYER_VMAX_MPS` | `12.0` | `physical` | physical sprint limit (E16 hygiene) | Player xy-velocity above 12 m/s is a tracking jump and becomes NaN. |
+| `BALL_VMAX_MPS` | `50.0` | `physical` | physical ball-speed limit (E16 hygiene) | Ball xy-velocity above 50 m/s is a tracking jump and becomes NaN. |
+| `BBOX_MIN_M2` | `10.0` | `guard` | E16 hygiene guard | Area ratio is undefined below 10 square metres of team spread. |
+| `GK_MAX_ATTACK_X_M` | `0.0` | `physical` | Laws: halfway line (canonical x is 0 at halfway) | A keeper beyond halfway is a tracking error; x/y become NaN. |
+| `ATTACKER_TAG_CODES` | `computed` | `external` | Smart Tagging audit, attacker-side codes (E16) | Interval codes that count as attacking; their defending mirrors are canonicalised in load_tags. |
+| `FEATURE_COLUMNS` | `computed` | `scaffold` | computed by _column_names() | Column names in stable order; a computed object with no decision value. |
+
 ### `possession/degrade.py`
 
 Training-data simulator; trained models see its output, so its values are shipped.
@@ -410,7 +458,9 @@ Paths, the published match length and organizer file names.
 ## Adding a constant
 
 1. Add module-level assignment (any target form).
-2. Add an entry to `docs/constant_provenance.json` under that module with `tag`, `source`, `why`.
+2. Add an entry to `docs/constant_provenance.json` under that module with `tag`, `source`, `why` and the AST `line`.
 3. If it is a string-keyed dict carrying numbers, add a field entry per key.
-4. Run `python scripts/constant_provenance.py --write` then `make test`; an untagged name, an untagged field, a stale entry or a changed value fails `tests/test_constant_provenance.py`.
+4. Run `python scripts/constant_provenance.py --write` then `make test`; an untagged name, an untagged field, a stale entry, a stale line or a changed value fails `tests/test_constant_provenance.py`.
+
+A **new module** is a scope decision, not an automatic pass: add `"modules"` entry with a tag per constant, or an `"exempt"` entry with a category and a written justification. Until one exists, the check fails with `unregistered module: possession/<file>.py`.
 

@@ -1,10 +1,18 @@
-"""Constant-provenance register: discover module-level constants and check them against the manifest.
+"""Constant-provenance register: discover every shipped module, then check its constants.
 
 This is the machine that answers the advisors' question *"is any constant trained, fitted or tuned on
 the wrong data?"* without an auditor reading prose.  ``docs/constant_provenance.json`` tags every
 module-level assignment in the shipped decision path with exactly one provenance class; this module
 re-derives the assignment set from the AST (so a new constant cannot arrive untagged), validates the
 manifest, and renders ``docs/CONSTANTS.md`` from it.
+
+The module scope is **discovered, not listed in this file**: every ``possession/*.py`` except
+``__init__.py`` must appear in the register either under ``modules`` (registered; every constant
+tagged) or under ``exempt`` (named with a category and a justification).  A new module that is in
+neither fails, so a constant cannot arrive in a file nobody remembered to add to a list.
+
+Every entry also records the AST line of its assignment.  A constant that moves fails with the line
+the AST now reports, so refreshing a citation is a one-number edit.
 
     python scripts/constant_provenance.py --check     # non-zero exit and a list on any problem
     python scripts/constant_provenance.py --write     # regenerate docs/CONSTANTS.md from the JSON
@@ -20,34 +28,18 @@ import sys
 SOLUTION = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join("docs", "constant_provenance.json")
 DOC = os.path.join("docs", "CONSTANTS.md")
-SCHEMA = 1
+SCHEMA = 2
+PACKAGE = "possession"
 
-# Every module that either writes the shipped labels, sets a shipped value, or is the training-data
-# simulator.  dproxy and ballfree are here because shipped stages read constants from them
-# (growd.HOLD_F <- dproxy.MIN_HOLD_S; ingap <- ballfree.HZ/STRIDE); a constant there can move the CSV.
-MODULES = (
-    "possession/pipeline.py",
-    "possession/structure.py",
-    "possession/baseline_plus.py",
-    "possession/dgate.py",
-    "possession/growd.py",
-    "possession/ingap.py",
-    "possession/subgap.py",
-    "possession/postprocess.py",
-    "possession/dproxy.py",
-    "possession/ballfree.py",
-    "possession/degrade.py",
-    "possession/config.py",
+# The categories an exemption may claim.  A registered module has one tag per constant; an exempt
+# module has one category plus a written justification, so the gap is named rather than accidental.
+EXEMPT_CATEGORIES = (
+    "not shipped",       # research arm, renderer, closed decoder: nothing on the CSV path imports it
+    "report-only",       # runs against this match but only prints a diagnostic; never writes a label
+    "loader/parser",     # reads/reshapes provider data; parses arrays, holds no decision value
+    "perception",        # builds features from tracking; feeds a model, not a label directly
+    "dev harness",       # scoring/evaluation machinery; defines the measurement, not the build
 )
-
-MODULE_NOTES = {
-    "possession/pipeline.py": "Stage order only; it declares no constant (0 entries).",
-    "possession/structure.py": "The only module allowed to hold game frames: published halves and kickoffs.",
-    "possession/dproxy.py": "Label-free diagnostics; shipped only through growd's three inherited values.",
-    "possession/ballfree.py": "P(H) model; shipped only through ingap's sampling constants.",
-    "possession/degrade.py": "Training-data simulator; trained models see its output, so its values are shipped.",
-    "possession/config.py": "Paths, the published match length and organizer file names.",
-}
 
 # The five provenance classes the card asks for, plus one explicit non-provenance class.  `scaffold`
 # is restricted by check() to computed objects (paths, type aliases), so a literal cannot hide there.
@@ -120,6 +112,17 @@ def _flatten_target(node):
 def _local_defs(tree):
     return {n.name for n in tree.body
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+
+
+def discovered(root=SOLUTION):
+    """Every ``possession/*.py`` on disk except ``__init__``, sorted.  No hardcoded module list.
+
+    ``__init__.py`` is excluded because it is a package marker: a constant there would be an import
+    side effect, and ``__init__`` is not a module anyone edits to ship a value.
+    """
+    folder = os.path.join(root, PACKAGE)
+    return ["%s/%s" % (PACKAGE, name) for name in sorted(os.listdir(folder))
+            if name.endswith(".py") and name != "__init__.py"]
 
 
 def module_assignments(path):
@@ -250,12 +253,12 @@ def load(root=SOLUTION):
 def audit(root=SOLUTION):
     """``(problems, stats)`` for the register at ``root``; empty problems means every constant is tagged.
 
-    ``stats`` counts what was actually inspected: module-level constants re-derived from the AST and the
-    dict fields those constants require a row for.  The freeze check prints them, so a silently empty
-    scan cannot look like a pass.
+    ``stats`` counts what was actually inspected: modules discovered on disk, registered, exempt, and
+    the module-level constants and dict fields re-derived from the AST.  The freeze check prints them,
+    so a silently empty scan cannot look like a pass.
     """
     problems = []
-    stats = dict(constants=0, fields=0, modules=0)
+    stats = dict(constants=0, fields=0, modules=0, exempt=0, discovered=0)
     try:
         manifest = load(root)
     except (OSError, ValueError) as exc:
@@ -263,9 +266,27 @@ def audit(root=SOLUTION):
     if manifest.get("schema") != SCHEMA:
         problems.append("schema is %r, expected %r" % (manifest.get("schema"), SCHEMA))
     modules = manifest.get("modules", {})
-    for mod in MODULES:
+    exempt = manifest.get("exempt", {})
+    present = discovered(root)
+    stats["discovered"] = len(present)
+    for mod in present:
+        if mod in exempt:
+            stats["exempt"] += 1
+            scope = exempt[mod]
+            if mod in modules:
+                problems.append("module is both registered and exempt: %s -- keep exactly one" % mod)
+            if scope.get("category") not in EXEMPT_CATEGORIES:
+                problems.append("exempt module %s has category %r, expected one of %s"
+                                % (mod, scope.get("category"), list(EXEMPT_CATEGORIES)))
+            if not scope.get("why"):
+                problems.append("exempt module %s has no written justification" % mod)
+            continue
         if mod not in modules:
-            problems.append("module missing from manifest: %s" % mod)
+            count = len(module_assignments(os.path.join(root, mod)))
+            problems.append("unregistered module: %s (%d module-level constant%s) -- add it to "
+                            "\"modules\" in %s with a tag per constant, or name it in \"exempt\" "
+                            "with a category and a justification"
+                            % (mod, count, "" if count == 1 else "s", MANIFEST))
             continue
         entries = modules[mod].get("constants", {})
         assigns = module_assignments(os.path.join(root, mod))
@@ -288,6 +309,15 @@ def audit(root=SOLUTION):
             for key in ("source", "why"):
                 if not entry.get(key):
                     problems.append("%s:%s has no %s" % (mod, a.name, key))
+            line = entry.get("line")
+            if not isinstance(line, int):
+                problems.append("missing line: %s:%s has no integer \"line\" in the register "
+                                "(the AST says line %d) -- add \"line\": %d"
+                                % (mod, a.name, a.lineno, a.lineno))
+            elif line != a.lineno:
+                problems.append("stale line: %s:%s is at line %d, register records %d -- set "
+                                "\"line\" to %d in %s"
+                                % (mod, a.name, a.lineno, line, a.lineno, MANIFEST))
             expected = entry.get("value")
             actual = snapshot(a)
             if expected is not None and actual != expected:
@@ -319,8 +349,12 @@ def audit(root=SOLUTION):
             if name not in seen:
                 problems.append("stale entry: %s:%s is no longer a module constant" % (mod, name))
     for mod in modules:
-        if mod not in MODULES:
-            problems.append("module outside the declared scope: %s" % mod)
+        if mod not in present:
+            problems.append("registered module is not on disk: %s -- remove it from \"modules\" or "
+                            "restore the file" % mod)
+    for mod in exempt:
+        if mod not in present:
+            problems.append("stale exemption: %s is not on disk -- remove it from \"exempt\"" % mod)
     return problems, stats
 
 
@@ -362,6 +396,7 @@ def render(manifest):
     const, fields = counts(manifest)
     n_const = sum(const.values())
     n_fields = sum(fields.values())
+    exempt = manifest.get("exempt", {})
     out = []
     add = out.append
     add("# CONSTANTS — provenance of every module-level constant in the shipped path")
@@ -374,11 +409,12 @@ def render(manifest):
     add("")
     add("> Is any constant trained, fitted, tuned or calibrated on the wrong data?")
     add("")
-    add("Every module-level assignment in the shipped path carries exactly one tag below. The tag says "
-        "what the constant may be justified by. `match` is the only class that is measured on this "
-        "match, and it is **label-free**: no possession label, no hand label and no video enters it. "
-        "No constant in the register is tagged with this match's ground truth or with the public "
-        "5 minutes, because no such constant exists (Q36/Q37).")
+    add("Every module-level assignment in a registered module carries exactly one tag below. The tag "
+        "says what the constant may be justified by. `match` is the only class that is measured on "
+        "this match, and it is **label-free**: no possession label, no hand label and no video enters "
+        "it. No constant in the register is tagged with this match's ground truth or with the public "
+        "5 minutes, because no such constant exists (Q36/Q37). Every other module is exempt with a "
+        "reason in [Scope](#scope), including the loader/parser boundary still to be registered.")
     add("")
     add("## Tag vocabulary")
     add("")
@@ -400,11 +436,29 @@ def render(manifest):
     add("")
     add("## Scope")
     add("")
-    add("Twelve modules: the stage writers (`pipeline` holds no constant), the training-data simulator, "
-        "`config`, and the two modules whose constants a shipped stage reads (`dproxy`, `ballfree`). "
-        "Out of scope by design: loaders and providers (`data`, `external`, `evaluate`) hold parsing and "
-        "cache-format constants, and the feature builder (`features`) holds perception constants; they "
-        "are checked by their own tests and are proposed for a later card.")
+    add("The scope is **discovered, not listed in code**: every `possession/*.py` except `__init__.py` "
+        "is either registered above (every module-level assignment carries a tag) or exempted below "
+        "with a reason. `scripts/constant_provenance.py` fails on a module in neither, on a registered "
+        "constant that is not at the line recorded here, and on a stale exemption. A new module "
+        "therefore cannot pass unseen, and a new constant cannot arrive untagged.")
+    add("")
+    add("Registered (%d): the stage writers (`pipeline` and `make_submission` declare no constant), the "
+        "training-data simulator, `config`, the modules a shipped stage reads values from "
+        "(`dproxy`, `ballfree`), and `features`, whose columns feed the ball-free model."
+        % sum(1 for m in manifest["modules"]))
+    add("")
+    add("Exempt (%d), each named with its justification:" % len(exempt))
+    add("")
+    add("| module | category | why it holds no shipped decision value |")
+    add("|---|---|---|")
+    for mod in sorted(exempt):
+        scope = exempt[mod]
+        add("| `%s` | %s | %s |" % (mod, scope.get("category"), _cell(scope.get("why"))))
+    add("")
+    add("`features` is registered rather than exempt because `ballfree` reads its columns: it is the "
+        "one E113 perception module on a label path, and B30 folded it in so no exempt module feeds a "
+        "shipped stage. What remains is E113's loader/parser boundary — `data`, `external` and "
+        "`evaluate` — named above and left to a later card.")
     add("")
     add("## Fitted on this match without labels")
     add("")
@@ -455,9 +509,7 @@ def render(manifest):
     add("")
     add("## Every constant")
     add("")
-    for mod in MODULES:
-        if mod not in manifest["modules"]:
-            continue
+    for mod in manifest["modules"]:
         entry = manifest["modules"][mod]
         add("### `%s`" % mod)
         add("")
@@ -476,10 +528,16 @@ def render(manifest):
     add("## Adding a constant")
     add("")
     add("1. Add module-level assignment (any target form).")
-    add("2. Add an entry to `docs/constant_provenance.json` under that module with `tag`, `source`, `why`.")
+    add("2. Add an entry to `docs/constant_provenance.json` under that module with `tag`, `source`, "
+        "`why` and the AST `line`.")
     add("3. If it is a string-keyed dict carrying numbers, add a field entry per key.")
     add("4. Run `python scripts/constant_provenance.py --write` then `make test`; an untagged name, an "
-        "untagged field, a stale entry or a changed value fails `tests/test_constant_provenance.py`.")
+        "untagged field, a stale entry, a stale line or a changed value fails "
+        "`tests/test_constant_provenance.py`.")
+    add("")
+    add("A **new module** is a scope decision, not an automatic pass: add `\"modules\"` entry with a "
+        "tag per constant, or an `\"exempt\"` entry with a category and a written justification. Until "
+        "one exists, the check fails with `unregistered module: possession/<file>.py`.")
     add("")
     return "\n".join(out) + "\n"
 
@@ -503,6 +561,8 @@ def main(argv=None):
             print("FAIL", p)
         print("constant provenance: %d constants, %d dict fields, %d problem(s)"
               % (stats["constants"], stats["fields"], len(problems)))
+        print("scope: %d modules discovered, %d registered, %d exempt"
+              % (stats["discovered"], stats["modules"], stats["exempt"]))
         return 1 if problems else 0
     return 0
 

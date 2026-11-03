@@ -1,5 +1,5 @@
 {
- "schema": 1,
+ "schema": 2,
  "title": "Constant provenance register for the shipped possession path",
  "question": "Is any constant trained, fitted, tuned or calibrated on the wrong data?",
  "tag_order": [
@@ -14,6 +14,10 @@
  "modules": {
   "possession/pipeline.py": {
    "note": "Stage order only; it declares no constant (0 entries).",
+   "constants": {}
+  },
+  "possession/make_submission.py": {
+   "note": "The CLI entry point. It declares no constant; the optional audio status line is printed after the CSV is written and cannot change it (S26).",
    "constants": {}
   },
   "possession/structure.py": {
@@ -1092,6 +1096,91 @@
     }
    }
   },
+  "possession/features.py": {
+   "note": "The label-free feature builder read by ballfree, hence ingap's P(H); E113 left it to E114 and B30 registered it because it sits on the label path.",
+   "constants": {
+    "FEATURE_VERSION": {
+     "tag": "external",
+     "source": "E16 (features v2)",
+     "why": "Feature-set/cache version; it invalidates the cached feature table and never selects a label.",
+     "line": 24,
+     "value": "v2"
+    },
+    "NEIGHBORS": {
+     "tag": "external",
+     "source": "E16 feature design",
+     "why": "Three nearest players per team feed the distance and relative-speed columns.",
+     "line": 25,
+     "value": 3
+    },
+    "RADII_M": {
+     "tag": "external",
+     "source": "E16 feature design",
+     "why": "Ball-count radii 1, 2, 4 and 8 m.",
+     "line": 26,
+     "value": [
+      1,
+      2,
+      4,
+      8
+     ]
+    },
+    "MAX_TIME_TO_BALL_S": {
+     "tag": "guard",
+     "source": "E16 feature design (clip)",
+     "why": "Caps time-to-ball at 60 s so a far player cannot produce an unbounded feature.",
+     "line": 27,
+     "value": 60.0
+    },
+    "STRAIN_DISTANCE_FLOOR_M": {
+     "tag": "guard",
+     "source": "E16 feature design (numerical floor)",
+     "why": "Floor in the closing-speed denominator so a 0 m distance cannot blow up.",
+     "line": 28,
+     "value": 0.5
+    },
+    "PLAYER_VMAX_MPS": {
+     "tag": "physical",
+     "source": "physical sprint limit (E16 hygiene)",
+     "why": "Player xy-velocity above 12 m/s is a tracking jump and becomes NaN.",
+     "line": 30,
+     "value": 12.0
+    },
+    "BALL_VMAX_MPS": {
+     "tag": "physical",
+     "source": "physical ball-speed limit (E16 hygiene)",
+     "why": "Ball xy-velocity above 50 m/s is a tracking jump and becomes NaN.",
+     "line": 31,
+     "value": 50.0
+    },
+    "BBOX_MIN_M2": {
+     "tag": "guard",
+     "source": "E16 hygiene guard",
+     "why": "Area ratio is undefined below 10 square metres of team spread.",
+     "line": 32,
+     "value": 10.0
+    },
+    "GK_MAX_ATTACK_X_M": {
+     "tag": "physical",
+     "source": "Laws: halfway line (canonical x is 0 at halfway)",
+     "why": "A keeper beyond halfway is a tracking error; x/y become NaN.",
+     "line": 33,
+     "value": 0.0
+    },
+    "ATTACKER_TAG_CODES": {
+     "tag": "external",
+     "source": "Smart Tagging audit, attacker-side codes (E16)",
+     "why": "Interval codes that count as attacking; their defending mirrors are canonicalised in load_tags.",
+     "line": 37
+    },
+    "FEATURE_COLUMNS": {
+     "tag": "scaffold",
+     "source": "computed by _column_names()",
+     "why": "Column names in stable order; a computed object with no decision value.",
+     "line": 86
+    }
+   }
+  },
   "possession/degrade.py": {
    "note": "Training-data simulator; trained models see its output, so its values are shipped.",
    "constants": {
@@ -1674,6 +1763,64 @@
      }
     }
    }
+  }
+ },
+ "exempt": {
+  "possession/data.py": {
+   "category": "loader/parser",
+   "why": "ATD and Smart-Tagging loader: array layout, chunk sizes, pitch defaults and column codes (7 constants). It reads and reshapes provider files and holds no decision value; E113 left loader/parser constants to a later card."
+  },
+  "possession/external.py": {
+   "category": "loader/parser",
+   "why": "IDSSE/SkillCorner loaders, cache version and provider flight filters (14 constants). They select and clean the external training games; the build never uses them to set a label. E113 left loader/parser constants to a later card."
+  },
+  "possession/evaluate.py": {
+   "category": "dev harness",
+   "why": "Adapts predictions and references to the organizer metric, pools games and computes CIs (4 constants). Scoring only: nothing here writes a label, and the build imports it only through external's cache checks."
+  },
+  "possession/audio.py": {
+   "category": "report-only",
+   "why": "Referee-whistle decoder (31 constants). `make_submission` imports it only to print the after-the-write `audio: ok|reason` line, which cannot change the CSV or the exit code (S26) \u2014 so it runs during the build but never writes a label. Reclassified from 'not shipped', which was false."
+  },
+  "possession/clean.py": {
+   "category": "not shipped",
+   "why": "Label-free tracking cleaner used by research scripts (3 constants). The shipped pipeline reads the raw ATD through data.load_match, so no cleaning default can move a label."
+  },
+  "possession/deadball.py": {
+   "category": "not shipped",
+   "why": "E07's dead-ball sharpeners, all default-off and tier 2 (18 constants). pipeline.py states it is not imported by construction; the primary whole-gap rule lives in the registered dgate."
+  },
+  "possession/dev_v1.py": {
+   "category": "dev harness",
+   "why": "The D-022 dev-v1 harness: games, seeds, cells and bootstrap draws (27 constants). It defines the measurement, never the build, and the build never imports it."
+  },
+  "possession/diagnostics.py": {
+   "category": "report-only",
+   "why": "E105 ball-in-play diagnostics with an explicit playing clock (4 constants). It reads the frozen CSV and prints; it sets nothing."
+  },
+  "possession/gk_possession.py": {
+   "category": "report-only",
+   "why": "E38 keeper-in-possession detector (23 constants). dproxy calls it for a report-only keeper table; its mask never writes a label, and growd inherits only dproxy's own three values."
+  },
+  "possession/hsmm.py": {
+   "category": "not shipped",
+   "why": "E09 HSMM/Viterbi decoder arm, dropped by D-028 (7 constants). pipeline.py does not import it."
+  },
+  "possession/render.py": {
+   "category": "not shipped",
+   "why": "Top-down clip renderer for figures and the notebook (13 constants). Nothing on the CSV path imports it."
+  },
+  "possession/spells_from_events.py": {
+   "category": "not shipped",
+   "why": "E03 event-first decoder behind the closed touch arm (4 constants). pipeline.py does not import it."
+  },
+  "possession/supervised.py": {
+   "category": "not shipped",
+   "why": "E10 learned frame model, not shipped and not imported by make_submission (12 constants). Its own docstring records the status."
+  },
+  "possession/touches.py": {
+   "category": "not shipped",
+   "why": "E02 ball-touch detector behind the closed event-first arm (3 constants). Nothing on the CSV path imports it."
   }
  }
 }
