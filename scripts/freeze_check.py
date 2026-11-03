@@ -17,6 +17,12 @@ Checks, in order:
 6. ``tests.test_rules_guard`` (GUARDRAILS 1-3), no skips.
 7. ``scripts/walkthrough_numbers.py --check`` (the merged B22): a docs-only commit may not move a
    published number without the number manifest noticing.
+8. the keeper-exclusion contract on a tiny synthetic match (B25/B26): ``gk_possession`` imports, both
+   dproxy targets report it, a missing module raises ``MissingGkPossession``, and the explicit
+   ``allow_missing=True`` opt-in records ``unavailable`` while vetoing nothing.
+9. the Q34 provenance statuses (the merged B27): a number report carries ``events_source``, the
+   adoption report carries ``base_rule_source``, and a reference log's git provenance is not
+   ``"unknown"`` -- so a broken install or a stale digest fails here, not only in a diagnostic.
 
 A failure prints the specific mismatch (got X, the freeze says Y) and exits non-zero.  Nothing in
 this script edits a source file, the CSV or the manifest; ``outputs/submission.csv`` is only
@@ -24,8 +30,10 @@ rewritten by build 1, exactly as ``make submission`` writes it.
 """
 import argparse
 import collections
+import contextlib
 import csv
 import hashlib
+import io
 import os
 import re
 import subprocess
@@ -107,7 +115,7 @@ def classify(path):
 
 def git_identity():
     """Print HEAD vs the freeze tag; warn (never fail) on a post-freeze HEAD."""
-    print("== 1/7 git identity")
+    print("== 1/9 git identity")
     if git("rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
         raise Failure("not a git checkout: the freeze record names a commit and tag, so the identity "
                       "cannot be checked. Run this from the `solution/` repository.")
@@ -156,7 +164,7 @@ def git_identity():
 
 def build_twice():
     """Rebuild the submission twice and compare the bytes."""
-    print("== 2/7 two builds, byte-identical")
+    print("== 2/9 two builds, byte-identical")
     os.makedirs(SCRATCH, exist_ok=True)
     canonical = os.path.join(SOLUTION, "outputs", "submission.csv")
     second = os.path.join(SCRATCH, "build2.csv")
@@ -185,7 +193,7 @@ def build_twice():
 
 
 def check_sha(path, sha):
-    print("== 3/7 frozen sha256")
+    print("== 3/9 frozen sha256")
     if sha != FROZEN_SHA:
         raise Failure(
             "sha256 mismatch: the rebuilt CSV is %s\n"
@@ -200,7 +208,7 @@ def check_sha(path, sha):
 
 def check_validator(path):
     """Run the organizer's validator on the rebuilt CSV; assert Valid + 199,319 rows."""
-    print("== 4/7 organizer validator")
+    print("== 4/9 organizer validator")
     repo = os.path.abspath(os.environ.get(
         "MTAH_REPO_DIR", os.path.join(ROOT, "more-than-a-hack-2027")))
     validator = os.path.join(repo, "evaluation", "validate_submission.py")
@@ -265,7 +273,7 @@ def maximal_D_runs(labels):
 
 def check_counts(path):
     """Count spells / D stretches / X from the CSV itself (not from the manifest)."""
-    print("== 5/7 frozen shape")
+    print("== 5/9 frozen shape")
     labels = read_labels(path)
     expect("rows", len(labels), FROZEN_ROWS)
 
@@ -287,7 +295,7 @@ def check_counts(path):
 
 
 def check_rules_guard():
-    print("== 6/7 tests.test_rules_guard + tests.test_prose_guard")
+    print("== 6/9 tests.test_rules_guard + tests.test_prose_guard")
     out, elapsed = run([sys.executable, "-m", "unittest",
                         "tests.test_rules_guard", "tests.test_prose_guard"],
                        cwd=SOLUTION, log=os.path.join(SCRATCH, "rules_guard.log"))
@@ -305,7 +313,7 @@ def check_rules_guard():
 
 def check_numbers():
     """Merged B22: a post-freeze commit may not move a published number unnoticed."""
-    print("== 7/7 walkthrough number manifest")
+    print("== 7/9 walkthrough number manifest")
     script = os.path.join(SOLUTION, "scripts", "walkthrough_numbers.py")
     if not os.path.isfile(script):
         raise Failure("missing %s; the number manifest is the docs-drift gate (B22)." % script)
@@ -314,6 +322,151 @@ def check_numbers():
     if "no drift" not in out:
         raise Failure("walkthrough_numbers.py --check did not report 'no drift':\n%s" % tail(out))
     print("  ok   %s" % out.strip().splitlines()[-1])
+
+
+def _synthetic_match(n=600):
+    """Tiny ATD-shaped Match for the contract checks: keepers, walking outfielders, half a ball.
+
+    Ball present for the first ``n // 2`` frames, missing after: that gives the missing-ball proxy a
+    qualifying gap and the present-ball proxy a graded ball-present stretch. No match data is read.
+    """
+    import numpy as np
+    from possession.data import Match
+    from possession.structure import PITCH_L, PITCH_W, Structure
+
+    present_frames = n // 2
+    P = np.full((n, 46, 2), np.nan, np.float32)
+    V = np.full((n, 46), np.nan, np.float32)
+    T = np.array([0] * 23 + [1] * 23, np.int8)
+    half = np.ones(n, np.int8)
+    for f in range(n):
+        P[f, 22] = (5.0, PITCH_W / 2)
+        P[f, 45] = (PITCH_L - 5.0, PITCH_W / 2)
+        V[f, 22] = V[f, 45] = 0.0
+        for i in range(11):
+            P[f, i] = (20 + 4 * i, 5 + 3 * i)
+            P[f, 23 + i] = (85 - 4 * i, 5 + 3 * i)
+            V[f, i] = V[f, 23 + i] = 1.2
+    B = np.full((n, 2), np.nan, np.float32)
+    B[:present_frames] = (PITCH_L / 2, PITCH_W / 2)
+    match = Match(P, V, T, B, np.zeros(n, np.float32),
+                  np.array([[22, 45], [22, 45]]), np.ones(n, bool), half)
+    st = Structure(halves={1: (0, n - 1)}, kickoffs={1: 0},
+                   attack_dir=np.array([[1, -1], [-1, 1]], np.int8),
+                   forced_dead_mask=np.zeros(n, bool))
+    return match, st
+
+
+def check_keeper_contract():
+    """B25/B26: the keeper exclusion is imported, named, and never substituted for.
+
+    Mirrors ``tests/test_dproxy.py``'s ``GkSourceContract`` on a synthetic match: if ``dproxy``
+    silently loses ``gk_possession`` this fails, instead of only a later diagnostic noticing. The
+    check is a diagnostic contract only -- ``gk_possession`` stays out of the build (D-028/D-029).
+    """
+    print("== 8/9 keeper exclusion contract")
+    import numpy as np
+    from unittest import mock
+
+    from possession import dproxy, gk_possession  # noqa: F401 - the import is the first assertion
+
+    match, st = _synthetic_match()
+    dp = dproxy.proxy(match, st, dict(exclude_gk=True))
+    pb = dproxy.present_ball(match, st, dict(exclude_gk=True))
+    for name, info in (("proxy", dp.info), ("present_ball", pb.info)):
+        if info.get("gk_source") != "gk_possession" or info.get("gk_note") is not None:
+            raise Failure("keeper contract: %s reports gk_source=%r, gk_note=%r; the freeze requires "
+                          "the imported detector and no note (B25)."
+                          % (name, info.get("gk_source"), info.get("gk_note")))
+
+    with mock.patch.object(dproxy, "_import_gk", side_effect=ImportError("no gk module")):
+        for name, fn in (("proxy", dproxy.proxy), ("present_ball", dproxy.present_ball)):
+            try:
+                fn(match, st, dict(exclude_gk=True))
+            except dproxy.MissingGkPossession as exc:
+                if "allow_missing=True" not in str(exc):
+                    raise Failure("keeper contract: %s raised MissingGkPossession without naming the "
+                                  "allow_missing=True opt-in: %s" % (name, exc))
+            else:
+                raise Failure("keeper contract: %s ran without possession.gk_possession and did not "
+                              "raise MissingGkPossession (B25 deleted every substitute)." % name)
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            dp_opt = dproxy.proxy(match, st, dict(exclude_gk=True, allow_missing=True))
+            pb_opt = dproxy.present_ball(match, st, dict(exclude_gk=True, allow_missing=True))
+
+    dp_off = dproxy.proxy(match, st, dict(exclude_gk=False))
+    pb_off = dproxy.present_ball(match, st, dict(exclude_gk=False))
+    for name, got, off in (("proxy", dp_opt, dp_off), ("present_ball", pb_opt, pb_off)):
+        info = got.info
+        if info.get("gk_source") != "unavailable":
+            raise Failure("keeper contract: %s with allow_missing=True reports gk_source=%r, not "
+                          "'unavailable'." % (name, info.get("gk_source")))
+        if "allow_missing=True" not in str(info.get("gk_note")):
+            raise Failure("keeper contract: %s with allow_missing=True does not record the opt-in in "
+                          "gk_note: %r" % (name, info.get("gk_note")))
+        if info.get("gk_frames") != 0 or info.get("gk_vetoed") != 0:
+            raise Failure("keeper contract: %s with allow_missing=True invented a keeper mask "
+                          "(gk_frames=%r, gk_vetoed=%r)."
+                          % (name, info.get("gk_frames"), info.get("gk_vetoed")))
+        if not np.array_equal(np.asarray(got.mask, bool), np.asarray(off.mask, bool)):
+            raise Failure("keeper contract: %s with allow_missing=True vetoes frames it cannot see "
+                          "(its mask differs from exclude_gk=False)." % name)
+    if "WARNING [dproxy]" not in stderr.getvalue():
+        raise Failure("keeper contract: the allow_missing=True opt-in printed no WARNING [dproxy] line.")
+    print("  ok   keeper contract      gk_possession imported; both proxies 'gk_possession'/no note; "
+          "ImportError -> MissingGkPossession; opt-in 'unavailable', 0 vetoed")
+
+
+def check_provenance():
+    """Q34/B27: every status that travels with a reported number is asserted on the freeze path.
+
+    Mirrors ``tests/test_q34_status.py``: the number report names where its whistle events came from,
+    the adoption report names its ablation base rule, and a reference log names a real git commit
+    (never ``unknown``). A broken install or stale digest fails the freeze instead of a diagnostic.
+    """
+    print("== 9/9 provenance statuses")
+    import numpy as np
+    from unittest import mock
+
+    from possession import audio, dproxy, gk_possession
+
+    match, st = _synthetic_match()
+    events = np.zeros(0, dtype=audio.EVENT_DTYPE)
+    with mock.patch.object(audio, "whistle_events",
+                           lambda *a, **k: audio.Track(events, False, "no_ffmpeg", None)):
+        gp = gk_possession.detect(match, st)
+    if gp.info.get("events_source") != "no_ffmpeg" or gp.info.get("n_events") != 0:
+        raise Failure("provenance: the keeper number report reads events_source=%r, n_events=%r; a "
+                      "missing audio track must be named 'no_ffmpeg' (Q34 b1)."
+                      % (gp.info.get("events_source"), gp.info.get("n_events")))
+
+    pb = dproxy.present_ball(match, st, dict(exclude_gk=True))
+    cue = np.zeros(len(match.B), bool)
+    for start in (100, 180, 250):
+        cue[start:start + 25] = True
+    report = dproxy.adoption_report(cue, match, proxy_obj=pb, n_boot=20)
+    if report.get("base_rule_source") != "proxy_info":
+        raise Failure("provenance: the adoption report reads base_rule_source=%r; a proxy built by "
+                      "present_ball must declare its own base rule (Q34 b4)."
+                      % report.get("base_rule_source"))
+
+    # Q34 b5: a reference-cache hit logs the code that wrote the table. Call the real provenance()
+    # but skip two imports that do not feed its git/path fields: dev_v1 imports the pandas-backed
+    # evaluate harness, and params() imports the scipy degrader only to print two constants.
+    import types
+    with mock.patch.dict(sys.modules,
+                         {"possession.evaluate": types.ModuleType("possession.evaluate")}):
+        from possession import dev_v1
+        with mock.patch.object(dev_v1, "params", lambda: {}):
+            prov = dev_v1.provenance()
+    if "git=" not in prov or "git=unknown" in prov:
+        raise Failure("provenance: dev_v1.provenance() has no real git hash (%r); a reference-cache "
+                      "hit would be logged without usable provenance (Q34 b5)." % prov)
+    git_hash = prov.split("git=", 1)[1].split()[0]
+    print("  ok   provenance          events_source=no_ffmpeg; base_rule_source=proxy_info; "
+          "git=%s" % git_hash)
 
 
 def main(argv=None):
@@ -344,6 +497,8 @@ def main(argv=None):
         counts, spells, d_runs = check_counts(path)
         check_rules_guard()
         check_numbers()
+        check_keeper_contract()
+        check_provenance()
     except Failure as error:
         sys.stdout.flush()
         print("\nFREEZE CHECK FAILED", file=sys.stderr)
