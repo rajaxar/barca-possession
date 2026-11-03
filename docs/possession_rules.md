@@ -137,12 +137,13 @@ possession count grows by more than 36%.
 
 *Why:* the ball-free shape model names the team with the ball 87% of the time on unseen matches, and
 the decoder added +.005 [.004, .007] on the practice set when it landed, positive in 10 of 10 matches.
-**On the final stack its measured contribution is smaller: removing it changes the score by −.001
-[−.003, +.001], negative in 8 of 10 matches.** The short-hidden-stoppage rule now claims most of the
-stoppages this decoder used to find, and what remains re-decodes live play, adding about 730 very short
-spells that break more real possessions than they recover. It stays because the effect is inside the
-noise band and the ball-free evidence is the thing that makes the hidden-ball stretches legible at all —
-not because it still earns five thousandths. On our match only 3.9% of graded frames are eligible, so
+**On the final stack its measured contribution is smaller than the gate-only +.005: removing it changes
+the score by −.0017 [−.0030, −.0004], negative in 3 of 10 matches** (E112). Two-thirds of the drop from
++.0052 is the stages added after it — grown D and the short-spell floor — and the seed-to-seed split is
+−.0009 / +.0031 / +.0031, a swing larger than the effect itself. Mechanically the decoder now adds about
+2,300 spells of 1.5 s or more and removes about 900 sub-1.5 s ones, so flicker falls from 6.3% to 4.2%
+with the D share unchanged. It stays because the marginal is positive on six of six primary cells and the
+ball-free evidence is what makes hidden-ball stretches legible at all. On our match only 3.9% of graded frames are eligible, so
 its reach was always small; with the gate in front it rewrites 1.2% of graded frames.
 
 ### 5d. Inside a gap the gate left alone, a sustained dead probability is a stoppage
