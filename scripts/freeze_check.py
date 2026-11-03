@@ -287,8 +287,9 @@ def check_counts(path):
 
 
 def check_rules_guard():
-    print("== 6/7 tests.test_rules_guard")
-    out, elapsed = run([sys.executable, "-m", "unittest", "tests.test_rules_guard"],
+    print("== 6/7 tests.test_rules_guard + tests.test_prose_guard")
+    out, elapsed = run([sys.executable, "-m", "unittest",
+                        "tests.test_rules_guard", "tests.test_prose_guard"],
                        cwd=SOLUTION, log=os.path.join(SCRATCH, "rules_guard.log"))
     match = re.search(r"^Ran (\d+) tests?", out, re.M)
     if not match:

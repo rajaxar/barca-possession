@@ -141,3 +141,5 @@ Maps each checklist item in [WHAT_WE_TRIED.md](WHAT_WE_TRIED.md) to our internal
 | Public sample score | D-008, D-013, B04 | work/DECISIONS.md |
 | Adoption rule | D-014, S22 | work/ADOPTION.md |
 | Team tooling (planned) | S20, S27, S28, S35, S38, V01, V02, V03, V04 | work/cards/ |
+
+Retired claims are enforced by `tests/test_prose_guard.py`; extend the list there.
