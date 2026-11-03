@@ -134,6 +134,21 @@ class RulesGuard(unittest.TestCase):
             bad += ["{}:{}: import {}".format(rel(p), n, m) for n, m in network_imports(read(p))]
         self.assertEqual(bad, [], "network import (GUARDRAILS 3)")
 
+    def test_training_uses_external_games_only(self):
+        """Every fitted component trains on external games; the match is never a training input."""
+        import inspect
+        from possession import ballfree, dgate, supervised
+        ids = dgate.training_games()
+        self.assertTrue(ids, "dgate trains on nothing")
+        for gid in ids:
+            self.assertTrue(gid.startswith(("idsse", "metrica")),
+                            "training game outside the external prefixes: %r" % (gid,))
+            self.assertNotIn("BAR-ATH", gid.upper())
+        for mod in (dgate, ballfree, supervised):
+            src = inspect.getsource(mod)
+            self.assertNotIn("load_match", src,
+                             "%s reads the match; a fitted component must train on external games only" % mod.__name__)
+
     def test_no_data_files_or_large_files(self):
         files = shipped_files(SOLUTION)
         if files is None:
