@@ -81,6 +81,15 @@ RULES = [
         card="Q27",
     ),
     dict(
+        name="mixed clock denominator for ball-in-play",
+        pattern=re.compile(r"ours\s+54\.3\s*%|z\s*=?\s*-0\.6\s*sd|-0\.6\s*sd\s+on\s+rate", re.I),
+        needles=("54.3", "-0.6"),
+        allowed=lambda line: bool(CORRECTIVE.search(line)),
+        fact="the like-for-like figure is 55.28% of the 103.95-min playing clock, z -0.46 (E105); "
+             "54.3% is live-of-graded against an external playing-clock share",
+        card="E105",
+    ),
+    dict(
         name=".456/.712 public-window numbers",
         pattern=re.compile(r"(?<![\d.])\.(?:456|712)(?![\d])"),
         needles=(".456", ".712"),

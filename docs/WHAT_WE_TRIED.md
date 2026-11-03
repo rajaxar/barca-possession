@@ -41,7 +41,7 @@ Legend: ✅ works or adopted. ❌ tried, does not work. ⚠️ partly, or with a
 | 📋 | Separate a held ball that is dead from one that is live, using player contact and formation | Held balls are hard for the resting-ball detector | Not built |
 | 📋 | Anomaly detection for resting-ball moments; changepoint detection for stoppage onsets; using the restart whistle to mark the end of a stoppage | Alternative ways to find the whole stoppage | Not built |
 | 📋 | Fuse every stoppage clue in one detector; a restart detector; after-goal restart chains from whistle and kickoff shape; re-pick the stoppage threshold when stillness is softened | The current rule uses few clues | Not built |
-| 📋 | Choose the dead-ball share we target from outside evidence, with our match's share only as a diagnostic | Our dead share is 41% and ball-in-play time still looks high | Not decided |
+| 📋 | Choose the dead-ball share we target from outside evidence, with our match's share only as a diagnostic | Our dead share is 45.7% of graded (44.7% of the playing clock) and the ball-in-play share is inside the external noise once the clock is normalised | Not decided |
 
 ## Who has the ball when we can't see it?
 
@@ -154,7 +154,7 @@ Legend: ✅ works or adopted. ❌ tried, does not work. ⚠️ partly, or with a
 | ❌ | Substitutions as a stoppage signature | | Extra peripheral players are tracked for a median of 3 seconds. Dropped |
 | ✅ | Dismiss rare events: quick free kicks, penalties, red cards, a ball hitting the referee, pitch invaders | Each is under 0.5% of the score | Ignored on purpose |
 | ✅ | Check keeper rule length | The Laws changed from 6 to 8 seconds | Noted |
-| ⚠️ | Check that the number of ball-in-play minutes is plausible against typical matches | Sanity band of 53 to 55 minutes | Our entry has 62 minutes, still high. Removing about 4.4 minutes of visible-ball dead time, which the grown-stoppage add-on targets, would put it inside the band |
+| ✅ | Check that the amount of ball in play is plausible against typical matches | The written sanity band is 53 to 55 minutes, which is an absolute figure for a ~98-minute match | Compared as a share of the playing clock, our entry is **55.3%** against 58.2 ± 6.4% for the ten practice matches — inside the noise (z −0.46). The old "62 minutes, still high" reading compared a 104-minute clock against a 98-minute band. At most **0.9 minute** of our live time has any dead-ball evidence (E84) |
 
 ## Method and evaluation setup
 
