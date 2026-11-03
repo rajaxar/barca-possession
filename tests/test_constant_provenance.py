@@ -74,7 +74,8 @@ class ConstantProvenance(unittest.TestCase):
     def test_every_tag_class_is_used(self):
         const, fields = cp.counts(cp.load())
         for key in cp.PROVENANCE_TAGS:
-            self.assertGreater(const.get(key, 0), 0, "no constant carries the %r tag" % key)
+            self.assertGreater(const.get(key, 0) + fields.get(key, 0), 0,
+                               "no constant or dict field carries the %r tag" % key)
         self.assertGreater(fields.get("match", 0), 0, "no dict field is tagged match-fitted")
 
     def test_q36_constants_are_registered(self):

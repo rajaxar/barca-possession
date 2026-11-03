@@ -74,6 +74,11 @@ TAGS = {
                    "quantiles, the low-pass widths, the simulator's fitted table, report-only measurements. "
                    "This is the one class an auditor must read carefully.",
     ),
+    "video": dict(
+        label="video-derived (report-only)",
+        definition="An agreement rate or diagnostic computed against an automatic verdict derived from the "
+                   "broadcast video. Report-only: it never enters the build, a label path or a shipped decision.",
+    ),
     "guard": dict(
         label="guard",
         definition="A defensive bound, canary, clip or pre-registered decision rule. It can fail the build "
@@ -242,13 +247,19 @@ def load(root=SOLUTION):
         return json.load(fh)
 
 
-def check(root=SOLUTION):
-    """All problems with the register at ``root``; an empty list means every constant is tagged."""
+def audit(root=SOLUTION):
+    """``(problems, stats)`` for the register at ``root``; empty problems means every constant is tagged.
+
+    ``stats`` counts what was actually inspected: module-level constants re-derived from the AST and the
+    dict fields those constants require a row for.  The freeze check prints them, so a silently empty
+    scan cannot look like a pass.
+    """
     problems = []
+    stats = dict(constants=0, fields=0, modules=0)
     try:
         manifest = load(root)
     except (OSError, ValueError) as exc:
-        return ["cannot read %s: %s" % (MANIFEST, exc)]
+        return ["cannot read %s: %s" % (MANIFEST, exc)], stats
     if manifest.get("schema") != SCHEMA:
         problems.append("schema is %r, expected %r" % (manifest.get("schema"), SCHEMA))
     modules = manifest.get("modules", {})
@@ -258,8 +269,10 @@ def check(root=SOLUTION):
             continue
         entries = modules[mod].get("constants", {})
         assigns = module_assignments(os.path.join(root, mod))
+        stats["modules"] += 1
         seen = set()
         for a in assigns:
+            stats["constants"] += 1
             seen.add(a.name)
             entry = entries.get(a.name)
             if entry is None:
@@ -282,6 +295,7 @@ def check(root=SOLUTION):
                                 % (mod, a.name, actual, expected))
             fields = entry.get("fields", {})
             want = required_fields(a.value)
+            stats["fields"] += len(want)
             for key in want:
                 if key not in fields:
                     problems.append("untagged field: %s.%s[%r] -- add a field entry to %s"
@@ -307,7 +321,12 @@ def check(root=SOLUTION):
     for mod in modules:
         if mod not in MODULES:
             problems.append("module outside the declared scope: %s" % mod)
-    return problems
+    return problems, stats
+
+
+def check(root=SOLUTION):
+    """All problems with the register at ``root``; an empty list means every constant is tagged."""
+    return audit(root)[0]
 
 
 # ------------------------------------------------------------------ rendering
@@ -475,14 +494,15 @@ def main(argv=None):
         manifest = load(args.root)
         with open(os.path.join(args.root, DOC), "w", encoding="utf-8") as fh:
             fh.write(render(manifest))
-        const, _ = counts(manifest)
-        print("wrote %s: %d constants, %s" % (DOC, sum(const.values()),
-                                              ", ".join("%s %d" % (k, const.get(k, 0)) for k in TAG_KEYS)))
+        const, fields = counts(manifest)
+        print("wrote %s: %d constants, %d dict fields, %s" % (DOC, sum(const.values()), sum(fields.values()),
+                                              ", ".join("%s %d+%d" % (k, const.get(k, 0), fields.get(k, 0)) for k in TAG_KEYS)))
     if args.check or not args.write:
-        problems = check(args.root)
+        problems, stats = audit(args.root)
         for p in problems:
             print("FAIL", p)
-        print("constant provenance: %d problem(s)" % len(problems))
+        print("constant provenance: %d constants, %d dict fields, %d problem(s)"
+              % (stats["constants"], stats["fields"], len(problems)))
         return 1 if problems else 0
     return 0
 

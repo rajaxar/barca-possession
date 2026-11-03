@@ -16,6 +16,7 @@ Every module-level assignment in the shipped path carries exactly one tag below.
 | `published structure (D-007)` | Published by the organizers (D-007, FAQ, games.py, starter kit): half boundaries, kickoffs, match length, pitch, label encoding, asset names, frame rate. Structure is not evidence about what happened. |
 | `physical/Laws` | A physical, physiological or Laws-of-the-Game fact (pitch geometry, sprint speed, walk/jog boundary, restart geometry); not fitted to any dataset. |
 | `label-free match diagnostic` | Measured or fitted on THIS match's tracking with no labels and no video: ATD run-length quantiles, the low-pass widths, the simulator's fitted table, report-only measurements. This is the one class an auditor must read carefully. |
+| `video-derived (report-only)` | An agreement rate or diagnostic computed against an automatic verdict derived from the broadcast video. Report-only: it never enters the build, a label path or a shipped decision. |
 | `guard` | A defensive bound, canary, clip or pre-registered decision rule. It can fail the build or clip a value; it never selects a label and is never tuned on this match's answers. |
 | `scaffold (not provenance)` | A filesystem path or a type alias: a computed object with no decision value. check() refuses this tag on a literal, so a number cannot be hidden here. |
 
@@ -23,10 +24,11 @@ Every module-level assignment in the shipped path carries exactly one tag below.
 
 | tag | constants | dict fields |
 |---|---:|---:|
-| `external` | 49 | 20 |
-| `structure` | 18 | 8 |
-| `physical` | 9 | 10 |
-| `match` | 9 | 60 |
+| `external` | 51 | 25 |
+| `structure` | 18 | 9 |
+| `physical` | 9 | 12 |
+| `match` | 7 | 50 |
+| `video` | 0 | 2 |
 | `guard` | 20 | 1 |
 | `scaffold` | 7 | 0 |
 | **total** | **112** | **99** |
@@ -49,11 +51,7 @@ These are the constants Q36 had to dig for. None is trained on a label or a vide
 | `degrade.DEV_V1_PARAMS` | the fitted gap-composition settings for dev-v1; both knobs are off in PARAMS | E50/E74 (checked against BAR-ATH label-free aggregates) |
 | `degrade.PARAMS` | simulator table; role tag, every field tagged individually (3 jog fields are a-priori) | S06/S17/S21/S24/S34 fits to this match's label-free tracking |
 | `dgate.LOWPASS_SIGMA` | 8-frame Gaussian applied to the EXTERNAL players so they look vendor-smoothed like the ATD; this is the player filter, not the ball filter (degrade.PARAMS['smooth_ball_sigma']) | E18 (ATD velocity PSD, label-free) |
-| `dproxy.BALL_BASE_S` | 0.5 s centered baseline displacement for the robust ball speed | E18 (ATD smoothing scale) |
-| `dproxy.BALL_MED_F` | 5-frame median half-width (0.2 s) for the robust ball speed | E18 (ATD 0.3 s smoothing) |
 | `dproxy.MEASURED_AGREEMENT` | proxy-vs-classifier-vs-E36 agreement rates; recorded error bars, never an input | scratch/S22/measure.py on BAR-ATH (label-free, report-only) |
-| `degrade.DEV_V1_PARAMS['dropout_live_cap_s']` | 6 s cap, checked against label-free BAR-ATH aggregates | E50/E74 |
-| `degrade.DEV_V1_PARAMS['d_gap_jitter']` | 0.25 knob, the largest whose composition still holds | E50 |
 | `degrade.PARAMS['scrub_pull']` | 0.9 pull of the rebuilt ball toward the nearest player | S06 fit |
 | `degrade.PARAMS['scrub_pull_tau']` | 10-frame ramp-in at run edges | S06 fit |
 | `degrade.PARAMS['scrub_pull_vmax']` | 20 m/s speed cap of the rebuilt ball | S06 fit |
@@ -62,7 +60,7 @@ These are the constants Q36 had to dig for. None is trained on a label or a vide
 | `degrade.PARAMS['wobble_tau_p']` | 20-frame position leash | S17 fit |
 | `degrade.PARAMS['wobble_cap']` | 3 m position cap | S17 fit |
 | `degrade.PARAMS['wobble_edge_tau']` | 10-frame edge ramp | S17 fit |
-| `degrade.PARAMS['wobble_pace_ref']` | 6.15 m/s reference pace; the D-ball wobble scales with the game's own alive pace | S17/E18 (ATD alive-ball pace, label-free) |
+| `degrade.PARAMS['wobble_pace_ref']` | A scale for the resting-ball pace gate, bracketed by the ATD median and mean; the exact value is not load-bearing. | ATD tracking statistics (label-free): median 5.08, mean 6.68; 6.15 is a mid-range working value, not the median |
 | `degrade.PARAMS['drop_zone_gamma']` | near-goal-line dropout bias; 0 = no spatial bias | S06 fit (off by default) |
 | `degrade.PARAMS['drop_zone_ref']` | 0.3 halfway-distance reference for the dropout zone | S06 fit |
 | `degrade.PARAMS['smooth_ball_sigma']` | 8-frame Gaussian on the BALL; the ball low-pass width (the player one is dgate.LOWPASS_SIGMA) | E18 (ATD ball velocity PSD, label-free) |
@@ -73,7 +71,6 @@ These are the constants Q36 had to dig for. None is trained on a label or a vide
 | `degrade.PARAMS['ball_false_rate']` | 8e-4 false detections per frame | S06 fit |
 | `degrade.PARAMS['ball_false_max_len']` | at most 3-frame false detections | S06 fit |
 | `degrade.PARAMS['ball_false_m']` | 2-15 m false-detection offset | S06 fit |
-| `degrade.PARAMS['slots_per_team']` | 23 output slots per team | ATD slot layout (label-free) |
 | `degrade.PARAMS['seg_scale']` | 1.25x multiplier on ATD segment lengths | S06 fit |
 | `degrade.PARAMS['gap_prob']` | 0.7 untracked-gap probability at a cut | S06 fit |
 | `degrade.PARAMS['gap_mean']` | 320-frame geometric mean gap | S06 fit |
@@ -86,11 +83,8 @@ These are the constants Q36 had to dig for. None is trained on a label or a vide
 | `degrade.PARAMS['bs_median']` | 1.13 m/s median ball-s value | S06 fit |
 | `degrade.PARAMS['bs_max']` | 7.27 m/s max ball-s value | S06 fit |
 | `degrade.PARAMS['bs_run_q']` | ATD ball-s run-length quantiles | S06 fit |
-| `degrade.PARAMS['d_ball_visible']` | share of D frames with a tracked ball; 0 = S17 | S21 knob (off by default) |
 | `degrade.PARAMS['restart_glide_s']` | 8 s glide onto the restart point | S21/S34 fit |
 | `degrade.PARAMS['restart_fade_s']` | 2 s keeper-exclusion fade | S21/S34 fit |
-| `degrade.PARAMS['restart_keeper_r']` | 2 m keeper exclusion radius on D frames | E38 geometry |
-| `degrade.PARAMS['restart_keeper_from_goal']` | a keeper is plausible within 45 m of its goal | E38 geometry |
 | `degrade.PARAMS['taker_r']` | 2 m taker/gatherer anchor radius | S32 fit |
 | `degrade.PARAMS['taker_approach_s']` | 4 s ramp of the taker pull | S32 fit |
 | `degrade.PARAMS['restart_wobble_lp']` | 8-frame smoothing of the restart wobble | S34 fit |
@@ -99,7 +93,6 @@ These are the constants Q36 had to dig for. None is trained on a label or a vide
 | `degrade.PARAMS['restart_rest_p']` | 8% of runs get no wobble | S34 fit |
 | `degrade.PARAMS['restart_wobble_tau_v']` | 150-frame wobble velocity memory | S34 fit |
 | `degrade.PARAMS['restart_center_lp']` | 8-frame smoothing of the taker pull | S34 fit |
-| `degrade.PARAMS['d_stationarity']` | strength of D-state player motion | S24 knob (off by default) |
 | `degrade.PARAMS['dropout_live_cap_s']` | cap on a NaN run that may hide live play | E50/E74 knob (off here) |
 | `degrade.PARAMS['d_gap_jitter']` | 0-1 edge-jitter knob | E50 knob (off here) |
 | `degrade.PARAMS['gap_jitter_on_s']` | edge-jitter onset N(0,4) s | E50 fit |
@@ -108,8 +101,6 @@ These are the constants Q36 had to dig for. None is trained on a label or a vide
 | `dproxy.MEASURED_AGREEMENT['classifier_mean_pd_on_proxy']` | measured error bar, report-only | S22 measurement on BAR-ATH |
 | `dproxy.MEASURED_AGREEMENT['classifier_d_proxy_live_share']` | measured error bar, report-only | S22 measurement on BAR-ATH |
 | `dproxy.MEASURED_AGREEMENT['proxy_d_classifier_live_share']` | measured error bar, report-only | S22 measurement on BAR-ATH |
-| `dproxy.MEASURED_AGREEMENT['e36_live_frames_called_d']` | measured error bar, report-only | S22 measurement on BAR-ATH |
-| `dproxy.MEASURED_AGREEMENT['e36_dead_frames_called_d']` | measured error bar, report-only | S22 measurement on BAR-ATH |
 | `dproxy.MEASURED_AGREEMENT['measured_on']` | measured error bar, report-only | S22 measurement on BAR-ATH |
 
 Explicitly named: the degrader's ATD **run-length quantiles** (`ATD_GAP_Q`, `ATD_PRESENT_Q`, `ATD_SEG_Q` — segment/gap lengths, not noise), the **ball low-pass width** (`degrade.PARAMS['smooth_ball_sigma'] = 8`; `dgate.LOWPASS_SIGMA = 8` is the separate player filter applied to the external training tracks), and the footprint guards below.
@@ -267,8 +258,8 @@ Label-free diagnostics; shipped only through growd's three inherited values.
 | `SPEED_CLIP` | `12.0` | `physical` | E16 (sprint spikes) | 12 m/s physical clip so one outlier cannot decide a 20-player mean |
 | `BALL_STILL_V` | `1.0` | `physical` | S06 coupling / E18 jitter | 1.0 m/s top of the stopped-ball mode, below the slowest rolling mode |
 | `MIN_HOLD_S` | `1.0` | `external` | E42 (pre-registered floor) | 1.0 s present-ball hold; ships into growd.HOLD_F, so this is a shipped value |
-| `BALL_MED_F` | `5` | `match` | E18 (ATD 0.3 s smoothing) | 5-frame median half-width (0.2 s) for the robust ball speed |
-| `BALL_BASE_S` | `0.5` | `match` | E18 (ATD smoothing scale) | 0.5 s centered baseline displacement for the robust ball speed |
+| `BALL_MED_F` | `5` | `external` | E42 design constant (not a fit) | 5 frames is a design choice for the resting-ball median; E18 measures the tracking blur at about 0.32 s, so this is not a fitted value. |
+| `BALL_BASE_S` | `0.5` | `external` | E42 design constant (not a fit) | 0.5 s is a design warm-up, not the 0.32 s E18 measures; it is cited as a design choice, not a fit. |
 | `NEAR_PLAYER_M` | `1.5` | `physical` | E02/I01 proximity radius | 1.5 m ball-at-feet distance |
 | `ROLL_V` | `3.0` | `physical` | E38 (V_BALL) | 3 m/s slowest rolling/carried mode |
 | `LINE_M` | `2.0` | `physical` | restart geometry | 2 m line-placement tolerance |
@@ -282,8 +273,8 @@ Label-free diagnostics; shipped only through growd's three inherited values.
 | `MEASURED_AGREEMENT['classifier_mean_pd_on_proxy']` | `0.91` | `match` | S22 measurement on BAR-ATH | measured error bar, report-only |
 | `MEASURED_AGREEMENT['classifier_d_proxy_live_share']` | `0.0831` | `match` | S22 measurement on BAR-ATH | measured error bar, report-only |
 | `MEASURED_AGREEMENT['proxy_d_classifier_live_share']` | `0.0257` | `match` | S22 measurement on BAR-ATH | measured error bar, report-only |
-| `MEASURED_AGREEMENT['e36_live_frames_called_d']` | `0.17` | `match` | S22 measurement on BAR-ATH | measured error bar, report-only |
-| `MEASURED_AGREEMENT['e36_dead_frames_called_d']` | `0.908` | `match` | S22 measurement on BAR-ATH | measured error bar, report-only |
+| `MEASURED_AGREEMENT['e36_live_frames_called_d']` | `0.17` | `video` | E36 broadcast-tracker verdicts (video-derived, report-only) | A report-only agreement rate against an automatic verdict computed from the broadcast video; it never enters the build or a shipped decision. |
+| `MEASURED_AGREEMENT['e36_dead_frames_called_d']` | `0.908` | `video` | E36 broadcast-tracker verdicts (video-derived, report-only) | A report-only agreement rate against an automatic verdict computed from the broadcast video; it never enters the build or a shipped decision. |
 | `MEASURED_AGREEMENT['measured_on']` | `'BAR-ATH full match, graded excl. forced 2H block, 2026-10-28 (scratch/S22)'` | `match` | S22 measurement on BAR-ATH | measured error bar, report-only |
 | `D_PROXY_PARAMS` | `computed` | `external` | E25/E15/E38/B25 (proxy config) | parameter set for the missing-ball proxy; role tag, fields tagged individually |
 | `D_PROXY_PARAMS['min_run_s']` | `computed` | `external` | E25 | 2 s floor |
@@ -300,7 +291,7 @@ Label-free diagnostics; shipped only through growd's three inherited values.
 | `D_PRESENT_PARAMS['speed_clip']` | `computed` | `physical` | E16 | 12 m/s clip |
 | `D_PRESENT_PARAMS['near_player_m']` | `computed` | `physical` | E02/I01 | 1.5 m placement radius |
 | `D_PRESENT_PARAMS['roll_v']` | `computed` | `physical` | E38 | 3 m/s rolling mode |
-| `D_PRESENT_PARAMS['base_s']` | `computed` | `match` | E18 | 0.5 s smoothing-scale baseline |
+| `D_PRESENT_PARAMS['base_s']` | `computed` | `external` | E18 | 0.5 s smoothing-scale baseline |
 | `D_PRESENT_PARAMS['exclude_gk']` | `True` | `external` | E38 | keepers are live play |
 | `D_PRESENT_PARAMS['allow_missing']` | `False` | `external` | B25 | explicit opt-in |
 | `D_PRESENT_PARAMS['include_rolling']` | `False` | `external` | E36 | opt-in only; live dribbles live there |
@@ -353,7 +344,7 @@ Training-data simulator; trained models see its output, so its values are shippe
 | `PARAMS['wobble_tau_p']` | `20.0` | `match` | S17 fit | 20-frame position leash |
 | `PARAMS['wobble_cap']` | `3.0` | `match` | S17 fit | 3 m position cap |
 | `PARAMS['wobble_edge_tau']` | `10.0` | `match` | S17 fit | 10-frame edge ramp |
-| `PARAMS['wobble_pace_ref']` | `6.15` | `match` | S17/E18 (ATD alive-ball pace, label-free) | 6.15 m/s reference pace; the D-ball wobble scales with the game's own alive pace |
+| `PARAMS['wobble_pace_ref']` | `6.15` | `match` | ATD tracking statistics (label-free): median 5.08, mean 6.68; 6.15 is a mid-range working value, not the median | A scale for the resting-ball pace gate, bracketed by the ATD median and mean; the exact value is not load-bearing. |
 | `PARAMS['wobble_pace_range']` | `(0.8, 1.3)` | `guard` | S17 clip | clip pace/wobble_pace_ref to [0.8,1.3] |
 | `PARAMS['drop_zone_gamma']` | `0.0` | `match` | S06 fit (off by default) | near-goal-line dropout bias; 0 = no spatial bias |
 | `PARAMS['drop_zone_ref']` | `0.3` | `match` | S06 fit | 0.3 halfway-distance reference for the dropout zone |
@@ -365,7 +356,7 @@ Training-data simulator; trained models see its output, so its values are shippe
 | `PARAMS['ball_false_rate']` | `0.0008` | `match` | S06 fit | 8e-4 false detections per frame |
 | `PARAMS['ball_false_max_len']` | `3` | `match` | S06 fit | at most 3-frame false detections |
 | `PARAMS['ball_false_m']` | `(2.0, 15.0)` | `match` | S06 fit | 2-15 m false-detection offset |
-| `PARAMS['slots_per_team']` | `23` | `match` | ATD slot layout (label-free) | 23 output slots per team |
+| `PARAMS['slots_per_team']` | `23` | `structure` | ATD slot layout (label-free) | 23 output slots per team |
 | `PARAMS['seg_scale']` | `1.25` | `match` | S06 fit | 1.25x multiplier on ATD segment lengths |
 | `PARAMS['gap_prob']` | `0.7` | `match` | S06 fit | 0.7 untracked-gap probability at a cut |
 | `PARAMS['gap_mean']` | `320` | `match` | S06 fit | 320-frame geometric mean gap |
@@ -378,11 +369,11 @@ Training-data simulator; trained models see its output, so its values are shippe
 | `PARAMS['bs_median']` | `1.13` | `match` | S06 fit | 1.13 m/s median ball-s value |
 | `PARAMS['bs_max']` | `7.27` | `match` | S06 fit | 7.27 m/s max ball-s value |
 | `PARAMS['bs_run_q']` | `(5, 21, 47, ..., 7042)` | `match` | S06 fit | ATD ball-s run-length quantiles |
-| `PARAMS['d_ball_visible']` | `0.0` | `match` | S21 knob (off by default) | share of D frames with a tracked ball; 0 = S17 |
+| `PARAMS['d_ball_visible']` | `0.0` | `external` | S21 knob (off by default) | share of D frames with a tracked ball; 0 = S17 |
 | `PARAMS['restart_glide_s']` | `8.0` | `match` | S21/S34 fit | 8 s glide onto the restart point |
 | `PARAMS['restart_fade_s']` | `2.0` | `match` | S21/S34 fit | 2 s keeper-exclusion fade |
-| `PARAMS['restart_keeper_r']` | `2.0` | `match` | E38 geometry | 2 m keeper exclusion radius on D frames |
-| `PARAMS['restart_keeper_from_goal']` | `45.0` | `match` | E38 geometry | a keeper is plausible within 45 m of its goal |
+| `PARAMS['restart_keeper_r']` | `2.0` | `physical` | E38 geometry | 2 m keeper exclusion radius on D frames |
+| `PARAMS['restart_keeper_from_goal']` | `45.0` | `physical` | E38 geometry | a keeper is plausible within 45 m of its goal |
 | `PARAMS['taker_r']` | `2.0` | `match` | S32 fit | 2 m taker/gatherer anchor radius |
 | `PARAMS['taker_approach_s']` | `4.0` | `match` | S32 fit | 4 s ramp of the taker pull |
 | `PARAMS['restart_wobble_lp']` | `8.0` | `match` | S34 fit | 8-frame smoothing of the restart wobble |
@@ -391,7 +382,7 @@ Training-data simulator; trained models see its output, so its values are shippe
 | `PARAMS['restart_rest_p']` | `0.08` | `match` | S34 fit | 8% of runs get no wobble |
 | `PARAMS['restart_wobble_tau_v']` | `150.0` | `match` | S34 fit | 150-frame wobble velocity memory |
 | `PARAMS['restart_center_lp']` | `8.0` | `match` | S34 fit | 8-frame smoothing of the taker pull |
-| `PARAMS['d_stationarity']` | `0.0` | `match` | S24 knob (off by default) | strength of D-state player motion |
+| `PARAMS['d_stationarity']` | `0.0` | `external` | S24 knob (off by default) | strength of D-state player motion |
 | `PARAMS['jog_rate']` | `0.03` | `physical` | S24 a-priori | 0.03 jog starts per slot-second; not fitted to any game |
 | `PARAMS['jog_dur_s']` | `(3.0, 8.0)` | `physical` | S24 a-priori | 3-8 s jog duration |
 | `PARAMS['jog_peak_v']` | `4.0` | `physical` | S24 a-priori | 4 m/s peak jog speed |
@@ -400,8 +391,8 @@ Training-data simulator; trained models see its output, so its values are shippe
 | `PARAMS['gap_jitter_on_s']` | `(0.0, 4.0)` | `match` | E50 fit | edge-jitter onset N(0,4) s |
 | `PARAMS['gap_jitter_end_s']` | `(0.0, 3.0)` | `match` | E50 fit | edge-jitter end N(0,3) s |
 | `DEV_V1_PARAMS` | `computed` | `match` | E50/E74 (checked against BAR-ATH label-free aggregates) | the fitted gap-composition settings for dev-v1; both knobs are off in PARAMS |
-| `DEV_V1_PARAMS['dropout_live_cap_s']` | `6.0` | `match` | E50/E74 | 6 s cap, checked against label-free BAR-ATH aggregates |
-| `DEV_V1_PARAMS['d_gap_jitter']` | `0.25` | `match` | E50 | 0.25 knob, the largest whose composition still holds |
+| `DEV_V1_PARAMS['dropout_live_cap_s']` | `6.0` | `external` | E50/E74 | A practice-set knob: the dev-v1 grid decides it (D-022); it is off by default and never touches the CSV. |
+| `DEV_V1_PARAMS['d_gap_jitter']` | `0.25` | `external` | E50 | A practice-set knob: the dev-v1 grid decides it (D-022); it is off by default and never touches the CSV. |
 
 ### `possession/config.py`
 
