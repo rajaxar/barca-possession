@@ -1,0 +1,1678 @@
+{
+  "schema": 1,
+  "title": "Constant provenance register for the shipped possession path",
+  "question": "Is any constant trained, fitted, tuned or calibrated on the wrong data?",
+  "tag_order": [
+    "external",
+    "structure",
+    "physical",
+    "match",
+    "guard",
+    "scaffold"
+  ],
+  "modules": {
+    "possession/pipeline.py": {
+      "note": "Stage order only; it declares no constant (0 entries).",
+      "constants": {}
+    },
+    "possession/structure.py": {
+      "note": "The only module allowed to hold game frames: published halves and kickoffs.",
+      "constants": {
+        "PITCH_L": {
+          "tag": "structure",
+          "source": "games.py GAMES['BAR-ATH']['pitch']",
+          "why": "105.3 m match pitch length",
+          "line": 11,
+          "value": 105.3
+        },
+        "PITCH_W": {
+          "tag": "structure",
+          "source": "games.py GAMES['BAR-ATH']['pitch']",
+          "why": "68.0 m match pitch width",
+          "line": 11,
+          "value": 68.0
+        },
+        "HALF_BLOCKS": {
+          "tag": "structure",
+          "source": "games.half_video_blocks('BAR-ATH')",
+          "why": "published half boundaries, inclusive video frames",
+          "line": 14,
+          "value": [
+            [
+              1,
+              11185,
+              90651
+            ],
+            [
+              2,
+              110808,
+              190197
+            ]
+          ]
+        },
+        "KICKOFFS": {
+          "tag": "structure",
+          "source": "D-007; FAQ.md:38; starter/load_atd.py:163",
+          "why": "published half kickoffs; 2H pre-kickoff 110808..113741 is published D",
+          "line": 18,
+          "value": {
+            "1": 11185,
+            "2": 113742
+          }
+        },
+        "Structure": {
+          "tag": "scaffold",
+          "source": "type alias",
+          "why": "namedtuple type, holds no value",
+          "line": 20,
+          "value": null
+        }
+      }
+    },
+    "possession/baseline_plus.py": {
+      "note": "",
+      "constants": {
+        "FPS": {
+          "tag": "structure",
+          "source": "published video frame rate (games.py)",
+          "why": "25 fps of the provided video; converts metres/frame to m/s",
+          "line": 26,
+          "value": 25
+        },
+        "DEFAULT_PARAMS": {
+          "tag": "external",
+          "source": "E01/E20 (10 external games, 3 seeds)",
+          "why": "the only entry point's parameter table; every value selected on external dev, not this match",
+          "line": 27,
+          "value": null,
+          "fields": {
+            "r": {
+              "tag": "external",
+              "source": "E01/E20",
+              "why": "2.5 m nearest-player evidence radius, external sweep",
+              "value": 2.5
+            },
+            "k": {
+              "tag": "external",
+              "source": "E20",
+              "why": "16 supporting frames = 0.64 s hysteresis, raised 8->16 on external dev",
+              "value": 16
+            },
+            "m": {
+              "tag": "external",
+              "source": "E20/B14",
+              "why": "20-frame (0.8 s) short-spell merge, below R08's 1.0 s floor",
+              "value": 20
+            },
+            "margin": {
+              "tag": "external",
+              "source": "E01",
+              "why": "0.5 m out-of-bounds debounce margin",
+              "value": 0.5
+            },
+            "min_out": {
+              "tag": "external",
+              "source": "E01",
+              "why": "6 frames of out-of-bounds before D starts",
+              "value": 6
+            },
+            "v_restart": {
+              "tag": "external",
+              "source": "E01",
+              "why": "3 m/s restart ball speed",
+              "value": 3.0
+            },
+            "restart_len": {
+              "tag": "external",
+              "source": "E01",
+              "why": "10 consecutive fast frames to end D",
+              "value": 10
+            }
+          }
+        }
+      }
+    },
+    "possession/dgate.py": {
+      "note": "",
+      "constants": {
+        "ENABLED": {
+          "tag": "external",
+          "source": "D-028/B04 (stage on/off decision)",
+          "why": "master switch; a project decision, never selected on this match",
+          "line": 27,
+          "value": true
+        },
+        "SEED": {
+          "tag": "external",
+          "source": "D-029 reproducible build",
+          "why": "fixed classifier seed for byte-identical rebuilds",
+          "line": 28,
+          "value": 0
+        },
+        "FPS": {
+          "tag": "structure",
+          "source": "published video frame rate",
+          "why": "25 fps",
+          "line": 29,
+          "value": 25
+        },
+        "STRIDE": {
+          "tag": "external",
+          "source": "E25 (5 Hz feature sampling)",
+          "why": "every 5th frame at 25 fps",
+          "line": 29,
+          "value": 5
+        },
+        "HZ": {
+          "tag": "external",
+          "source": "E25 (5 Hz feature sampling)",
+          "why": "derived FPS // STRIDE = 5 Hz",
+          "line": 30,
+          "value": null
+        },
+        "TF": {
+          "tag": "external",
+          "source": "E25 (external dev, +.038)",
+          "why": "50-frame (2 s) minimum ball-missing run",
+          "line": 31,
+          "value": 50
+        },
+        "Q": {
+          "tag": "external",
+          "source": "E25 (external dev)",
+          "why": "gap-mean P(D) > 0.5",
+          "line": 32,
+          "value": 0.5
+        },
+        "ABSORB": {
+          "tag": "external",
+          "source": "E25 (external dev)",
+          "why": "100-frame (4 s) H/A island absorption",
+          "line": 33,
+          "value": 100
+        },
+        "LOWPASS_SIGMA": {
+          "tag": "match",
+          "source": "E18 (ATD velocity PSD, label-free)",
+          "why": "8-frame Gaussian applied to the EXTERNAL players so they look vendor-smoothed like the ATD; this is the player filter, not the ball filter (degrade.PARAMS['smooth_ball_sigma'])",
+          "line": 34,
+          "value": 8.0
+        },
+        "TRAIN_PREFIXES": {
+          "tag": "external",
+          "source": "E25/D-022 training-set composition",
+          "why": "P(D) trains on the 7 IDSSE + 3 Metrica games only; SkillCorner excluded (derived D flags)",
+          "line": 35,
+          "value": [
+            "idsse",
+            "metrica"
+          ]
+        },
+        "MAX_D_SHARE_ADDED": {
+          "tag": "guard",
+          "source": "Q20/E44 (BAR-ATH label-free, measured 0.36)",
+          "why": "build canary: the gate may add D to at most 50% of graded frames",
+          "line": 36,
+          "value": 0.5
+        },
+        "MIN_D_SHARE_ADDED": {
+          "tag": "guard",
+          "source": "Q20/E44 (BAR-ATH label-free)",
+          "why": "build canary: at least 10% added, so a dead gate fails as loudly as a runaway one",
+          "line": 37,
+          "value": 0.1
+        }
+      }
+    },
+    "possession/growd.py": {
+      "note": "",
+      "constants": {
+        "ENABLED": {
+          "tag": "external",
+          "source": "E66/D-008 (stage on/off decision)",
+          "why": "growd ships on",
+          "line": 21,
+          "value": true
+        },
+        "R_M": {
+          "tag": "external",
+          "source": "E65 (external dev grid, 6 v cells, 3 seeds)",
+          "why": "25 m ship radius; 12 m was the pre-registered fallback",
+          "line": 22,
+          "value": 25.0
+        },
+        "CAP_S": {
+          "tag": "external",
+          "source": "E65 (external dev grid)",
+          "why": "30 s per-side growth cap",
+          "line": 23,
+          "value": 30
+        },
+        "FPS": {
+          "tag": "structure",
+          "source": "published video frame rate",
+          "why": "25 fps",
+          "line": 24,
+          "value": 25
+        },
+        "G": {
+          "tag": "external",
+          "source": "E47 (external dev)",
+          "why": "anchor team-speed cap 1.0 m/s",
+          "line": 25,
+          "value": 1.0
+        },
+        "VETO_M": {
+          "tag": "external",
+          "source": "E47 (external dev)",
+          "why": "2 m keeper-approach veto at the anchor",
+          "line": 26,
+          "value": 2.0
+        },
+        "PLAUS_M": {
+          "tag": "external",
+          "source": "E38 (gk_possession.PLAUS_M)",
+          "why": "a keeper is plausible within 45 m of its own goal",
+          "line": 27,
+          "value": 45.0
+        },
+        "S_HI": {
+          "tag": "external",
+          "source": "E39/E42 (external dev)",
+          "why": "team mean speed 1.5 m/s counts as fast",
+          "line": 28,
+          "value": 1.5
+        },
+        "S_JUMP": {
+          "tag": "external",
+          "source": "E47 (external dev)",
+          "why": "team mean speed 3 m/s is a restart",
+          "line": 29,
+          "value": 3.0
+        },
+        "S_BALL": {
+          "tag": "external",
+          "source": "E42 (external dev)",
+          "why": "ball > 3 m/s while the team is fast stops growth",
+          "line": 30,
+          "value": 3.0
+        },
+        "H_F": {
+          "tag": "external",
+          "source": "E47 (external dev)",
+          "why": "25-frame growth hysteresis",
+          "line": 31,
+          "value": 25
+        },
+        "HOLD_F": {
+          "tag": "external",
+          "source": "E42 via dproxy.MIN_HOLD_S",
+          "why": "25 frames = 1.0 s anchor hold, derived from dproxy.MIN_HOLD_S; no new tuning",
+          "line": 32,
+          "value": null
+        },
+        "ABSORB": {
+          "tag": "external",
+          "source": "E25 via dgate.ABSORB",
+          "why": "alias of dgate's 100-frame absorption",
+          "line": 33,
+          "value": null
+        },
+        "MAX_MASK_SHARE": {
+          "tag": "guard",
+          "source": "B01/E65 (BAR-ATH label-free, measured .0755; dev max .126)",
+          "why": "runaway bound on growd's own grown mask, share of graded frames",
+          "line": 42,
+          "value": 0.3
+        },
+        "MIN_MASK_SHARE": {
+          "tag": "guard",
+          "source": "B01 (dev min .0020)",
+          "why": "dead-rule bound: a growd that masks almost nothing is as suspect as a runaway one",
+          "line": 43,
+          "value": 0.001
+        },
+        "MAX_CHANGED_PER_ELIGIBLE": {
+          "tag": "guard",
+          "source": "B01 (BAR-ATH 1.016, +8% headroom)",
+          "why": "RELATIVE footprint bound: changed frames <= 1.10x the graded mask frames the input left live",
+          "line": 44,
+          "value": 1.1
+        },
+        "MAX_D_SHARE_ADDED": {
+          "tag": "guard",
+          "source": "B01 (BAR-ATH .02895; dev max .126)",
+          "why": "ABSOLUTE runaway cap on added D share (not the canary; the relative bound above is)",
+          "line": 45,
+          "value": 0.2
+        },
+        "MAX_FLICKER_ADDED": {
+          "tag": "guard",
+          "source": "E65 (BAR-ATH +3 at R25)",
+          "why": "at most 5 added H/A spells shorter than 1 s",
+          "line": 46,
+          "value": 5
+        }
+      }
+    },
+    "possession/ingap.py": {
+      "note": "",
+      "constants": {
+        "ENABLED": {
+          "tag": "external",
+          "source": "D08 (stage on/off decision)",
+          "why": "ingap ships on, chained after the D gate",
+          "line": 26,
+          "value": true
+        },
+        "LAM": {
+          "tag": "external",
+          "source": "R08 Gamma prior (k=0.743, theta=13.06 s; external Metrica games 1-3)",
+          "why": "3.88 nats per switch = ln(mean H/A spell at 5 Hz); not fitted on this match",
+          "line": 27,
+          "value": null
+        },
+        "MIN_GAP": {
+          "tag": "external",
+          "source": "E25 (ball-missing run convention)",
+          "why": "50-frame (2 s) minimum gap",
+          "line": 28,
+          "value": 50
+        },
+        "PH_CLIP": {
+          "tag": "guard",
+          "source": "numerical floor for log()",
+          "why": "clip P(H) to [.02,.98] so a 0 cannot produce -inf",
+          "line": 29,
+          "value": 0.02
+        },
+        "MAX_CHANGED_SHARE": {
+          "tag": "guard",
+          "source": "Q17 (BAR-ATH label-free, measured .0116 gated)",
+          "why": "build canary: the gated stack may change at most 3% of graded frames",
+          "line": 30,
+          "value": 0.03
+        },
+        "MAX_PRESENT_SHARE": {
+          "tag": "guard",
+          "source": "D08 (BAR-ATH label-free)",
+          "why": "PRESENT-BALL share bar: at most 5% of ingap's changes may land on ball-present frames",
+          "line": 31,
+          "value": 0.05
+        },
+        "MAX_SPELL_RATIO": {
+          "tag": "guard",
+          "source": "D08 (BAR-ATH label-free)",
+          "why": "spells after / before <= 1.36",
+          "line": 32,
+          "value": 1.36
+        },
+        "CODE": {
+          "tag": "structure",
+          "source": "organizer label encoding (starter kit / FAQ)",
+          "why": "H=0 A=1 D=2 X=3, the published label codes",
+          "line": 33,
+          "value": {
+            "H": 0,
+            "A": 1,
+            "D": 2,
+            "X": 3
+          },
+          "fields": {
+            "H": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for H",
+              "value": 0
+            },
+            "A": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for A",
+              "value": 1
+            },
+            "D": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for D",
+              "value": 2
+            },
+            "X": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for X",
+              "value": 3
+            }
+          }
+        },
+        "NAME": {
+          "tag": "structure",
+          "source": "organizer label encoding",
+          "why": "inverse code->name table, published labels",
+          "line": 34,
+          "value": null
+        }
+      }
+    },
+    "possession/subgap.py": {
+      "note": "",
+      "constants": {
+        "ENABLED": {
+          "tag": "external",
+          "source": "E66 (stage on/off decision)",
+          "why": "subgap ships on after ingap",
+          "line": 18,
+          "value": true
+        },
+        "Q": {
+          "tag": "external",
+          "source": "E69 (external dev; overlay won 24/24 variants)",
+          "why": "P(D) > 0.5 inside an unfired gap",
+          "line": 19,
+          "value": 0.5
+        },
+        "TF": {
+          "tag": "external",
+          "source": "E69/E25",
+          "why": "50-frame (2 s) minimum gap, as dgate",
+          "line": 20,
+          "value": 50
+        },
+        "T2": {
+          "tag": "external",
+          "source": "E69 (external dev)",
+          "why": "50-frame (2 s) minimum P(D) run inside the gap",
+          "line": 21,
+          "value": 50
+        },
+        "ABSORB": {
+          "tag": "external",
+          "source": "E25 via dgate.ABSORB",
+          "why": "alias of dgate's 100-frame absorption",
+          "line": 22,
+          "value": null
+        },
+        "MIN_ADDED": {
+          "tag": "guard",
+          "source": "E69 (BAR-ATH label-free, measured .0066)",
+          "why": "dead-rule bound: >= 0.5% added D",
+          "line": 23,
+          "value": 0.005
+        },
+        "MAX_ADDED": {
+          "tag": "guard",
+          "source": "E69 (BAR-ATH label-free)",
+          "why": "runaway bound: <= 15% added D",
+          "line": 24,
+          "value": 0.15
+        }
+      }
+    },
+    "possession/postprocess.py": {
+      "note": "",
+      "constants": {
+        "FPS": {
+          "tag": "structure",
+          "source": "published video frame rate",
+          "why": "25 fps",
+          "line": 36,
+          "value": 25
+        },
+        "CODE": {
+          "tag": "structure",
+          "source": "organizer label encoding (starter kit / FAQ)",
+          "why": "published label codes",
+          "line": 37,
+          "value": {
+            "H": 0,
+            "A": 1,
+            "D": 2,
+            "X": 3
+          },
+          "fields": {
+            "H": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for H",
+              "value": 0
+            },
+            "A": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for A",
+              "value": 1
+            },
+            "D": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for D",
+              "value": 2
+            },
+            "X": {
+              "tag": "structure",
+              "source": "organizer label encoding",
+              "why": "published code for X",
+              "value": 3
+            }
+          }
+        },
+        "NAME": {
+          "tag": "structure",
+          "source": "organizer label encoding",
+          "why": "inverse code->name table",
+          "line": 38,
+          "value": null
+        },
+        "LIVE": {
+          "tag": "structure",
+          "source": "organizer label encoding",
+          "why": "the two live codes H=0, A=1",
+          "line": 39,
+          "value": [
+            0,
+            1
+          ]
+        },
+        "DEFAULT": {
+          "tag": "external",
+          "source": "E14/E99 (external dev curve); R08 for the 1.5 s ceiling",
+          "why": "the shipping E14 winner; the dev curve is flat 1.35-2.5 s",
+          "line": 45,
+          "value": null,
+          "fields": {
+            "min_spell": {
+              "tag": "external",
+              "source": "E14/E99; R08 1.0 s floor",
+              "why": "38-frame (1.5 s) short-spell floor, top of R08's label-safe band",
+              "value": 38
+            },
+            "absorb": {
+              "tag": "external",
+              "source": "E14/E99",
+              "why": "absorb short spells to D (keeps the two host spells separate)",
+              "value": "to_d"
+            },
+            "max_d": {
+              "tag": "external",
+              "source": "E14/E99",
+              "why": "D merging off: every merge variant was flat",
+              "value": 0
+            },
+            "merge_same_team_only": {
+              "tag": "external",
+              "source": "E14/E99",
+              "why": "only same-team D runs would be merged if max_d > 0",
+              "value": true
+            }
+          }
+        },
+        "ENABLED": {
+          "tag": "external",
+          "source": "D-010/E14 (tier-1 decision)",
+          "why": "the floor is the last label write",
+          "line": 49,
+          "value": true
+        }
+      }
+    },
+    "possession/dproxy.py": {
+      "note": "Label-free diagnostics; shipped only through growd's three inherited values.",
+      "constants": {
+        "FPS": {
+          "tag": "structure",
+          "source": "published video frame rate",
+          "why": "25 fps",
+          "line": 210,
+          "value": 25.0
+        },
+        "MIN_RUN_S": {
+          "tag": "external",
+          "source": "E25 gradient; E69 0.05% share (Q37)",
+          "why": "2 s missing-run floor; the Q08 public-window clause is gone",
+          "line": 213,
+          "value": 2.0
+        },
+        "STILL_V": {
+          "tag": "physical",
+          "source": "E15/E25/E38 (walk/jog boundary)",
+          "why": "1.5 m/s collective stillness; a football constant, not fitted",
+          "line": 214,
+          "value": 1.5
+        },
+        "SPEED_CLIP": {
+          "tag": "physical",
+          "source": "E16 (sprint spikes)",
+          "why": "12 m/s physical clip so one outlier cannot decide a 20-player mean",
+          "line": 215,
+          "value": 12.0
+        },
+        "BALL_STILL_V": {
+          "tag": "physical",
+          "source": "S06 coupling / E18 jitter",
+          "why": "1.0 m/s top of the stopped-ball mode, below the slowest rolling mode",
+          "line": 218,
+          "value": 1.0
+        },
+        "MIN_HOLD_S": {
+          "tag": "external",
+          "source": "E42 (pre-registered floor)",
+          "why": "1.0 s present-ball hold; ships into growd.HOLD_F, so this is a shipped value",
+          "line": 219,
+          "value": 1.0
+        },
+        "BALL_MED_F": {
+          "tag": "match",
+          "source": "E18 (ATD 0.3 s smoothing)",
+          "why": "5-frame median half-width (0.2 s) for the robust ball speed",
+          "line": 220,
+          "value": 5
+        },
+        "BALL_BASE_S": {
+          "tag": "match",
+          "source": "E18 (ATD smoothing scale)",
+          "why": "0.5 s centered baseline displacement for the robust ball speed",
+          "line": 221,
+          "value": 0.5
+        },
+        "NEAR_PLAYER_M": {
+          "tag": "physical",
+          "source": "E02/I01 proximity radius",
+          "why": "1.5 m ball-at-feet distance",
+          "line": 222,
+          "value": 1.5
+        },
+        "ROLL_V": {
+          "tag": "physical",
+          "source": "E38 (V_BALL)",
+          "why": "3 m/s slowest rolling/carried mode",
+          "line": 223,
+          "value": 3.0
+        },
+        "LINE_M": {
+          "tag": "physical",
+          "source": "restart geometry",
+          "why": "2 m line-placement tolerance",
+          "line": 224,
+          "value": 2.0
+        },
+        "CENTER_M": {
+          "tag": "physical",
+          "source": "Laws of the Game",
+          "why": "9.15 m center-circle radius",
+          "line": 225,
+          "value": 9.15
+        },
+        "SPOT_M": {
+          "tag": "physical",
+          "source": "Laws of the Game",
+          "why": "1.5 m painted penalty-spot tolerance",
+          "line": 226,
+          "value": 1.5
+        },
+        "GOAL_AREA_M": {
+          "tag": "physical",
+          "source": "Laws of the Game",
+          "why": "5.5 m goal-area depth",
+          "line": 227,
+          "value": 5.5
+        },
+        "GRADE_BINS_S": {
+          "tag": "external",
+          "source": "E25 probe bins",
+          "why": "<=3 / 3-6 / 6-12 / >12 s run-length bins",
+          "line": 231,
+          "value": null
+        },
+        "GRADE_P": {
+          "tag": "external",
+          "source": "E25 external classifier",
+          "why": "P(D | run length) = .09/.39/.58/.85",
+          "line": 232,
+          "value": [
+            0.09,
+            0.39,
+            0.58,
+            0.85
+          ]
+        },
+        "MEASURED_AGREEMENT": {
+          "tag": "match",
+          "source": "scratch/S22/measure.py on BAR-ATH (label-free, report-only)",
+          "why": "proxy-vs-classifier-vs-E36 agreement rates; recorded error bars, never an input",
+          "line": 236,
+          "value": null,
+          "fields": {
+            "classifier_agreement_on_proxy": {
+              "tag": "match",
+              "source": "S22 measurement on BAR-ATH",
+              "why": "measured error bar, report-only",
+              "value": 0.968
+            },
+            "classifier_mean_pd_on_proxy": {
+              "tag": "match",
+              "source": "S22 measurement on BAR-ATH",
+              "why": "measured error bar, report-only",
+              "value": 0.91
+            },
+            "classifier_d_proxy_live_share": {
+              "tag": "match",
+              "source": "S22 measurement on BAR-ATH",
+              "why": "measured error bar, report-only",
+              "value": 0.0831
+            },
+            "proxy_d_classifier_live_share": {
+              "tag": "match",
+              "source": "S22 measurement on BAR-ATH",
+              "why": "measured error bar, report-only",
+              "value": 0.0257
+            },
+            "e36_live_frames_called_d": {
+              "tag": "match",
+              "source": "S22 measurement on BAR-ATH",
+              "why": "measured error bar, report-only",
+              "value": 0.17
+            },
+            "e36_dead_frames_called_d": {
+              "tag": "match",
+              "source": "S22 measurement on BAR-ATH",
+              "why": "measured error bar, report-only",
+              "value": 0.908
+            },
+            "measured_on": {
+              "tag": "match",
+              "source": "S22 measurement on BAR-ATH",
+              "why": "measured error bar, report-only",
+              "value": "BAR-ATH full match, graded excl. forced 2H block, 2026-10-28 (scratch/S22)"
+            }
+          }
+        },
+        "D_PROXY_PARAMS": {
+          "tag": "external",
+          "source": "E25/E15/E38/B25 (proxy config)",
+          "why": "parameter set for the missing-ball proxy; role tag, fields tagged individually",
+          "line": 250,
+          "value": null,
+          "fields": {
+            "min_run_s": {
+              "tag": "external",
+              "source": "E25",
+              "why": "2 s floor",
+              "value": null
+            },
+            "still_v": {
+              "tag": "physical",
+              "source": "E15/E25/E38",
+              "why": "1.5 m/s stillness",
+              "value": null
+            },
+            "speed_clip": {
+              "tag": "physical",
+              "source": "E16",
+              "why": "12 m/s clip",
+              "value": null
+            },
+            "run_gate": {
+              "tag": "external",
+              "source": "E15",
+              "why": "'frame' dead-ish state",
+              "value": "frame"
+            },
+            "exclude_gk": {
+              "tag": "external",
+              "source": "E38",
+              "why": "keepers are live play",
+              "value": true
+            },
+            "allow_missing": {
+              "tag": "external",
+              "source": "B25",
+              "why": "explicit opt-in, no silent fallback",
+              "value": false
+            },
+            "gk_include_gathered": {
+              "tag": "external",
+              "source": "E38",
+              "why": "branch that can overlap a missing ball",
+              "value": true
+            }
+          }
+        },
+        "D_PRESENT_PARAMS": {
+          "tag": "external",
+          "source": "E42/E38/B25 (proxy config)",
+          "why": "parameter set for the present-ball proxy; role tag, fields tagged individually",
+          "line": 256,
+          "value": null,
+          "fields": {
+            "min_hold_s": {
+              "tag": "external",
+              "source": "E42",
+              "why": "1 s hold",
+              "value": null
+            },
+            "ball_still_v": {
+              "tag": "physical",
+              "source": "S06/E18",
+              "why": "1 m/s near-rest",
+              "value": null
+            },
+            "still_v": {
+              "tag": "physical",
+              "source": "E15/E25/E38",
+              "why": "1.5 m/s stillness",
+              "value": null
+            },
+            "speed_clip": {
+              "tag": "physical",
+              "source": "E16",
+              "why": "12 m/s clip",
+              "value": null
+            },
+            "near_player_m": {
+              "tag": "physical",
+              "source": "E02/I01",
+              "why": "1.5 m placement radius",
+              "value": null
+            },
+            "roll_v": {
+              "tag": "physical",
+              "source": "E38",
+              "why": "3 m/s rolling mode",
+              "value": null
+            },
+            "base_s": {
+              "tag": "match",
+              "source": "E18",
+              "why": "0.5 s smoothing-scale baseline",
+              "value": null
+            },
+            "exclude_gk": {
+              "tag": "external",
+              "source": "E38",
+              "why": "keepers are live play",
+              "value": true
+            },
+            "allow_missing": {
+              "tag": "external",
+              "source": "B25",
+              "why": "explicit opt-in",
+              "value": false
+            },
+            "include_rolling": {
+              "tag": "external",
+              "source": "E36",
+              "why": "opt-in only; live dribbles live there",
+              "value": false
+            }
+          }
+        },
+        "DProxy": {
+          "tag": "scaffold",
+          "source": "type alias",
+          "why": "namedtuple type, holds no value",
+          "line": 262,
+          "value": null
+        },
+        "PresentD": {
+          "tag": "scaffold",
+          "source": "type alias",
+          "why": "namedtuple type, holds no value",
+          "line": 272,
+          "value": null
+        },
+        "AFTER_WINDOW_S": {
+          "tag": "external",
+          "source": "E15 sec. 3",
+          "why": "+0.5..+3 s D-state contrast window",
+          "line": 283,
+          "value": [
+            0.5,
+            3.0
+          ]
+        },
+        "BEFORE_WINDOW_S": {
+          "tag": "external",
+          "source": "E15 sec. 3",
+          "why": "-3..-0.5 s contrast window",
+          "line": 284,
+          "value": [
+            -3.0,
+            -0.5
+          ]
+        },
+        "MAX_NAN_SHARE": {
+          "tag": "guard",
+          "source": "pre-registered protocol",
+          "why": "refuse a window with >5% NaN",
+          "line": 285,
+          "value": 0.05
+        },
+        "MIN_DOMAIN_FRAMES": {
+          "tag": "guard",
+          "source": "pre-registered protocol",
+          "why": ">=100 frames per window else refuse",
+          "line": 286,
+          "value": 100
+        },
+        "MIN_LEAD_GAIN": {
+          "tag": "guard",
+          "source": "GUARDRAILS 3 noise band ~.04",
+          "why": ">=.05 spellF1 lead to adopt a cue",
+          "line": 287,
+          "value": 0.05
+        },
+        "MIN_CONDITIONAL_LEAD": {
+          "tag": "guard",
+          "source": "pre-registered protocol",
+          "why": "the lead must hold inside missing frames",
+          "line": 288,
+          "value": 0.05
+        },
+        "MAX_ACTIVE_SHARE_WARN": {
+          "tag": "guard",
+          "source": "pre-registered protocol",
+          "why": "a cue on >10% of graded frames is a state",
+          "line": 289,
+          "value": 0.1
+        },
+        "N_BOOT": {
+          "tag": "external",
+          "source": "pre-registered protocol",
+          "why": "2000 bootstrap draws",
+          "line": 290,
+          "value": 2000
+        },
+        "SEED": {
+          "tag": "external",
+          "source": "D-029 reproducibility",
+          "why": "fixed seed",
+          "line": 291,
+          "value": 0
+        },
+        "ALPHA": {
+          "tag": "guard",
+          "source": "pre-registered protocol",
+          "why": "0.05 significance level",
+          "line": 292,
+          "value": 0.05
+        }
+      }
+    },
+    "possession/ballfree.py": {
+      "note": "P(H) model; shipped only through ingap's sampling constants.",
+      "constants": {
+        "SEED": {
+          "tag": "external",
+          "source": "D-029 reproducibility",
+          "why": "fixed model seed",
+          "line": 30,
+          "value": 0
+        },
+        "FPS": {
+          "tag": "structure",
+          "source": "published video frame rate",
+          "why": "25 fps",
+          "line": 31,
+          "value": 25
+        },
+        "STRIDE": {
+          "tag": "external",
+          "source": "E04 (5 Hz sampling)",
+          "why": "every 5th frame",
+          "line": 32,
+          "value": 5
+        },
+        "HZ": {
+          "tag": "external",
+          "source": "E04 (5 Hz sampling)",
+          "why": "derived FPS // STRIDE = 5 Hz",
+          "line": 33,
+          "value": null
+        },
+        "WINDOWS_S": {
+          "tag": "external",
+          "source": "E04 feature design",
+          "why": "1/3/8 s centered mean windows",
+          "line": 34,
+          "value": [
+            1,
+            3,
+            8
+          ]
+        },
+        "TREND_S": {
+          "tag": "external",
+          "source": "E04 feature design",
+          "why": "3 s forward-minus-backward trend",
+          "line": 35,
+          "value": 3
+        },
+        "PITCH": {
+          "tag": "external",
+          "source": "S05 external manifest",
+          "why": "external games are ~105 x 68 m",
+          "line": 36,
+          "value": [
+            105.0,
+            68.0
+          ]
+        },
+        "TEAM_COLS": {
+          "tag": "external",
+          "source": "E04 feature list",
+          "why": "the ball-free columns the model may read",
+          "line": 39,
+          "value": [
+            "tracked_count",
+            "centroid_attack_x_m",
+            "centroid_y_m",
+            "spread_x_m",
+            "spread_y_m",
+            "bbox_area_m2",
+            "defensive_line_attack_x_m",
+            "gk_attack_x_m",
+            "mean_speed_mps",
+            "pressing_mps"
+          ]
+        },
+        "FORBIDDEN_PREFIXES": {
+          "tag": "guard",
+          "source": "E04/D-028 leak guard",
+          "why": "ball/camera/tag column prefixes the ball-free model must never read",
+          "line": 42,
+          "value": [
+            "ball_",
+            "home_ball",
+            "away_ball",
+            "camera",
+            "attacker_tag",
+            "set_piece"
+          ]
+        }
+      }
+    },
+    "possession/degrade.py": {
+      "note": "Training-data simulator; trained models see its output, so its values are shipped.",
+      "constants": {
+        "FPS": {
+          "tag": "structure",
+          "source": "published video frame rate",
+          "why": "25 fps",
+          "line": 61,
+          "value": 25
+        },
+        "PITCH": {
+          "tag": "external",
+          "source": "S05 external manifest",
+          "why": "all external games are ~105 x 68 m",
+          "line": 62,
+          "value": [
+            105.0,
+            68.0
+          ]
+        },
+        "ATD_GAP_Q": {
+          "tag": "match",
+          "source": "fit_targets(data.load_match()), label-free",
+          "why": "ATD ball-MISSING run-length quantiles (0,5..100%) in frames; run lengths, not noise",
+          "line": 66,
+          "value": [
+            1,
+            2,
+            12,
+            134,
+            146,
+            152,
+            170,
+            187,
+            215,
+            239,
+            268,
+            289,
+            314,
+            404,
+            486,
+            526,
+            603,
+            727,
+            845,
+            1270,
+            5537
+          ]
+        },
+        "ATD_PRESENT_Q": {
+          "tag": "match",
+          "source": "fit_targets(data.load_match()), label-free",
+          "why": "ATD ball-PRESENT run-length quantiles in frames; run lengths, not noise",
+          "line": 68,
+          "value": [
+            16,
+            40,
+            54,
+            105,
+            115,
+            137,
+            174,
+            213,
+            235,
+            300,
+            345,
+            458,
+            571,
+            614,
+            706,
+            758,
+            940,
+            1222,
+            1542,
+            2267,
+            3667
+          ]
+        },
+        "ATD_SEG_Q": {
+          "tag": "match",
+          "source": "fit_targets(data.load_match()), label-free",
+          "why": "ATD outfield slot-segment run-length quantiles in frames",
+          "line": 70,
+          "value": [
+            8,
+            42,
+            65,
+            92,
+            140,
+            194,
+            244,
+            317,
+            427,
+            618,
+            873,
+            1192,
+            1582,
+            2140,
+            2773,
+            3480,
+            4367,
+            5443,
+            6819,
+            9459,
+            30811
+          ]
+        },
+        "PARAMS": {
+          "tag": "match",
+          "source": "S06/S17/S21/S24/S34 fits to this match's label-free tracking",
+          "why": "simulator table; role tag, every field tagged individually (3 jog fields are a-priori)",
+          "line": 73,
+          "value": null,
+          "fields": {
+            "scrub_pull": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.9 pull of the rebuilt ball toward the nearest player",
+              "value": 0.9
+            },
+            "scrub_pull_tau": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "10-frame ramp-in at run edges",
+              "value": 10
+            },
+            "scrub_pull_vmax": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "20 m/s speed cap of the rebuilt ball",
+              "value": 20.0
+            },
+            "wobble_sigma_v": {
+              "tag": "match",
+              "source": "S17 fit",
+              "why": "3 m/s OU velocity std of the D-ball wander",
+              "value": 3.0
+            },
+            "wobble_tau_v": {
+              "tag": "match",
+              "source": "S17 fit",
+              "why": "20-frame velocity memory",
+              "value": 20.0
+            },
+            "wobble_tau_p": {
+              "tag": "match",
+              "source": "S17 fit",
+              "why": "20-frame position leash",
+              "value": 20.0
+            },
+            "wobble_cap": {
+              "tag": "match",
+              "source": "S17 fit",
+              "why": "3 m position cap",
+              "value": 3.0
+            },
+            "wobble_edge_tau": {
+              "tag": "match",
+              "source": "S17 fit",
+              "why": "10-frame edge ramp",
+              "value": 10.0
+            },
+            "wobble_pace_ref": {
+              "tag": "match",
+              "source": "S17/E18 (ATD alive-ball pace, label-free)",
+              "why": "6.15 m/s reference pace; the D-ball wobble scales with the game's own alive pace",
+              "value": 6.15
+            },
+            "wobble_pace_range": {
+              "tag": "guard",
+              "source": "S17 clip",
+              "why": "clip pace/wobble_pace_ref to [0.8,1.3]",
+              "value": [
+                0.8,
+                1.3
+              ]
+            },
+            "drop_zone_gamma": {
+              "tag": "match",
+              "source": "S06 fit (off by default)",
+              "why": "near-goal-line dropout bias; 0 = no spatial bias",
+              "value": 0.0
+            },
+            "drop_zone_ref": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.3 halfway-distance reference for the dropout zone",
+              "value": 0.3
+            },
+            "smooth_ball_sigma": {
+              "tag": "match",
+              "source": "E18 (ATD ball velocity PSD, label-free)",
+              "why": "8-frame Gaussian on the BALL; the ball low-pass width (the player one is dgate.LOWPASS_SIGMA)",
+              "value": 8.0
+            },
+            "smooth_player_sigma": {
+              "tag": "match",
+              "source": "E18/S17 (ATD PSD, label-free)",
+              "why": "8-frame Gaussian on every player track",
+              "value": 8.0
+            },
+            "ball_ar_tau": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "50-frame AR(1) ball-offset time constant",
+              "value": 50
+            },
+            "ball_ar_sigma": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.4 m AR(1) offset std",
+              "value": 0.4
+            },
+            "ball_white_sigma": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.5 mm white jitter (ATD mm scale)",
+              "value": 0.0005
+            },
+            "ball_false_rate": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "8e-4 false detections per frame",
+              "value": 0.0008
+            },
+            "ball_false_max_len": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "at most 3-frame false detections",
+              "value": 3
+            },
+            "ball_false_m": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "2-15 m false-detection offset",
+              "value": [
+                2.0,
+                15.0
+              ]
+            },
+            "slots_per_team": {
+              "tag": "match",
+              "source": "ATD slot layout (label-free)",
+              "why": "23 output slots per team",
+              "value": 23
+            },
+            "seg_scale": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "1.25x multiplier on ATD segment lengths",
+              "value": 1.25
+            },
+            "gap_prob": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.7 untracked-gap probability at a cut",
+              "value": 0.7
+            },
+            "gap_mean": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "320-frame geometric mean gap",
+              "value": 320
+            },
+            "gk_seg_scale": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "10x longer goalkeeper segments",
+              "value": 10.0
+            },
+            "ghost_rate": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "1.6e-3 ghost starts per team-frame",
+              "value": 0.0016
+            },
+            "ghost_seg_scale": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.3x ghost segment length",
+              "value": 0.3
+            },
+            "ghost_offset_m": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.5-3.0 m ghost offset",
+              "value": [
+                0.5,
+                3.0
+              ]
+            },
+            "ghost_drift_m": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "0.5 m ghost drift",
+              "value": 0.5
+            },
+            "bs_rate": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "1.83e-4 ball-s runs per frame",
+              "value": 0.000183
+            },
+            "bs_median": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "1.13 m/s median ball-s value",
+              "value": 1.13
+            },
+            "bs_max": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "7.27 m/s max ball-s value",
+              "value": 7.27
+            },
+            "bs_run_q": {
+              "tag": "match",
+              "source": "S06 fit",
+              "why": "ATD ball-s run-length quantiles",
+              "value": [
+                5,
+                21,
+                47,
+                67,
+                76,
+                80,
+                87,
+                104,
+                122,
+                131,
+                163,
+                192,
+                211,
+                226,
+                334,
+                420,
+                444,
+                488,
+                601,
+                952,
+                7042
+              ]
+            },
+            "d_ball_visible": {
+              "tag": "match",
+              "source": "S21 knob (off by default)",
+              "why": "share of D frames with a tracked ball; 0 = S17",
+              "value": 0.0
+            },
+            "restart_glide_s": {
+              "tag": "match",
+              "source": "S21/S34 fit",
+              "why": "8 s glide onto the restart point",
+              "value": 8.0
+            },
+            "restart_fade_s": {
+              "tag": "match",
+              "source": "S21/S34 fit",
+              "why": "2 s keeper-exclusion fade",
+              "value": 2.0
+            },
+            "restart_keeper_r": {
+              "tag": "match",
+              "source": "E38 geometry",
+              "why": "2 m keeper exclusion radius on D frames",
+              "value": 2.0
+            },
+            "restart_keeper_from_goal": {
+              "tag": "match",
+              "source": "E38 geometry",
+              "why": "a keeper is plausible within 45 m of its goal",
+              "value": 45.0
+            },
+            "taker_r": {
+              "tag": "match",
+              "source": "S32 fit",
+              "why": "2 m taker/gatherer anchor radius",
+              "value": 2.0
+            },
+            "taker_approach_s": {
+              "tag": "match",
+              "source": "S32 fit",
+              "why": "4 s ramp of the taker pull",
+              "value": 4.0
+            },
+            "restart_wobble_lp": {
+              "tag": "match",
+              "source": "S34 fit",
+              "why": "8-frame smoothing of the restart wobble",
+              "value": 8.0
+            },
+            "restart_wobble_gain": {
+              "tag": "match",
+              "source": "S34 fit",
+              "why": "2.4x wobble gain",
+              "value": 2.4
+            },
+            "restart_wobble_spread": {
+              "tag": "match",
+              "source": "S34 fit",
+              "why": "1.0 lognormal spread of the per-run wobble scale",
+              "value": 1.0
+            },
+            "restart_rest_p": {
+              "tag": "match",
+              "source": "S34 fit",
+              "why": "8% of runs get no wobble",
+              "value": 0.08
+            },
+            "restart_wobble_tau_v": {
+              "tag": "match",
+              "source": "S34 fit",
+              "why": "150-frame wobble velocity memory",
+              "value": 150.0
+            },
+            "restart_center_lp": {
+              "tag": "match",
+              "source": "S34 fit",
+              "why": "8-frame smoothing of the taker pull",
+              "value": 8.0
+            },
+            "d_stationarity": {
+              "tag": "match",
+              "source": "S24 knob (off by default)",
+              "why": "strength of D-state player motion",
+              "value": 0.0
+            },
+            "jog_rate": {
+              "tag": "physical",
+              "source": "S24 a-priori",
+              "why": "0.03 jog starts per slot-second; not fitted to any game",
+              "value": 0.03
+            },
+            "jog_dur_s": {
+              "tag": "physical",
+              "source": "S24 a-priori",
+              "why": "3-8 s jog duration",
+              "value": [
+                3.0,
+                8.0
+              ]
+            },
+            "jog_peak_v": {
+              "tag": "physical",
+              "source": "S24 a-priori",
+              "why": "4 m/s peak jog speed",
+              "value": 4.0
+            },
+            "dropout_live_cap_s": {
+              "tag": "match",
+              "source": "E50/E74 knob (off here)",
+              "why": "cap on a NaN run that may hide live play",
+              "value": null
+            },
+            "d_gap_jitter": {
+              "tag": "match",
+              "source": "E50 knob (off here)",
+              "why": "0-1 edge-jitter knob",
+              "value": 0.0
+            },
+            "gap_jitter_on_s": {
+              "tag": "match",
+              "source": "E50 fit",
+              "why": "edge-jitter onset N(0,4) s",
+              "value": [
+                0.0,
+                4.0
+              ]
+            },
+            "gap_jitter_end_s": {
+              "tag": "match",
+              "source": "E50 fit",
+              "why": "edge-jitter end N(0,3) s",
+              "value": [
+                0.0,
+                3.0
+              ]
+            }
+          }
+        },
+        "DEV_V1_PARAMS": {
+          "tag": "match",
+          "source": "E50/E74 (checked against BAR-ATH label-free aggregates)",
+          "why": "the fitted gap-composition settings for dev-v1; both knobs are off in PARAMS",
+          "line": 157,
+          "value": null,
+          "fields": {
+            "dropout_live_cap_s": {
+              "tag": "match",
+              "source": "E50/E74",
+              "why": "6 s cap, checked against label-free BAR-ATH aggregates",
+              "value": 6.0
+            },
+            "d_gap_jitter": {
+              "tag": "match",
+              "source": "E50",
+              "why": "0.25 knob, the largest whose composition still holds",
+              "value": 0.25
+            }
+          }
+        }
+      }
+    },
+    "possession/config.py": {
+      "note": "Paths, the published match length and organizer file names.",
+      "constants": {
+        "HERE": {
+          "tag": "scaffold",
+          "source": "filesystem path",
+          "why": "package directory; no decision value",
+          "line": 5,
+          "value": null
+        },
+        "SOLUTION_DIR": {
+          "tag": "scaffold",
+          "source": "filesystem path",
+          "why": "repository root; no decision value",
+          "line": 6,
+          "value": null
+        },
+        "DEFAULT_DATA_DIR": {
+          "tag": "scaffold",
+          "source": "filesystem path",
+          "why": "default organizer data path; no decision value",
+          "line": 8,
+          "value": null
+        },
+        "DEFAULT_REPO_DIR": {
+          "tag": "scaffold",
+          "source": "filesystem path",
+          "why": "default organizer repo path; no decision value",
+          "line": 9,
+          "value": null
+        },
+        "N_VIDEO_FRAMES": {
+          "tag": "structure",
+          "source": "games.py (published match length)",
+          "why": "199319 frames = submission length",
+          "line": 11,
+          "value": 199319
+        },
+        "ASSET_CANDIDATES": {
+          "tag": "structure",
+          "source": "organizer-provided asset file names",
+          "why": "accepted file names per asset; no decision value",
+          "line": 16,
+          "value": {
+            "tactical": {
+              "video": [
+                "BAR-ATH_tactical.mp4",
+                "BAR-ATH_tactical-001.mp4"
+              ],
+              "atd_meta": [
+                "BAR-ATH_tactical_atd.xml"
+              ],
+              "atd_raw": [
+                "BAR-ATH_tactical_atd.txt"
+              ],
+              "homography": [
+                "BAR-ATH_tactical_homography.csv"
+              ],
+              "smart_tagging": [
+                "BAR-ATH_tactical_smart_tagging.xml"
+              ]
+            },
+            "broadcast": {
+              "video": [
+                "BAR-ATH_broadcast.mp4"
+              ],
+              "atd_meta": [
+                "BAR-ATH_broadcast_atd.xml"
+              ],
+              "atd_raw": [
+                "BAR-ATH_broadcast_atd.txt"
+              ],
+              "homography": [
+                "BAR-ATH_broadcast_homography.csv"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
