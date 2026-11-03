@@ -13,7 +13,7 @@ Frame-level football possession (`H`/`A`/`D`/`X`) for BAR-ATH, ranked on spellF1
 
 ## Environment
 
-Python 3.13 (the version the pins were built and tested on). Everything is pinned with `==` and hash-locked
+Python 3.13.5 (the version the pins were built and tested on). Everything is pinned with `==` and hash-locked
 (`--hash=sha256:`, all cp313/abi3/pure-python wheels and sdists on PyPI, so pip enforces hashes automatically) in
 `requirements.txt`; `requirements-extra.txt` is an empty placeholder for gated extras.
 
@@ -50,13 +50,13 @@ found (see `possession/config.py`).
 
     make submission        # writes outputs/submission.csv with the frozen D-028 stack
     make validate          # ...and runs the organizer validator on it
-    make freeze-check      # asserts the D-029 freeze: provenance register, two builds, sha, validator, shape, rules guard, number manifest, manifest shape, public page audit
+    make freeze-check      # asserts the D-029 freeze: frozen environment (Python 3.13.5 + 34 pins; --allow-env-drift for a knowingly different machine), provenance register, two builds, sha, validator, shape, rules guard, number manifest, manifest shape, public page audit
     make headline          # reproduces the frozen dev-v1 headline (master .4247 vs ship .4039) in ~71 min
     make test
 
 or `python -m possession.make_submission --out outputs/submission.csv`.
 
-`make freeze-check` is the one-command audit of the frozen artifact: it first checks every module-level constant and string-keyed dict field against `docs/constant_provenance.json` (`scripts/constant_provenance.py --check`, 123 constants / 99 dict fields, printed as one line; a missing register is a clean skip). The scope is discovered from `possession/*.py`, so every file is either registered or named as exempt with a reason, and every entry's line is checked against the AST. It then builds twice, compares the files byte for byte, checks the sha256 `ee7b5b6b…46d8`, runs the organizer validator, counts 370 spells / 138 D stretches / 40,462 X, runs `tests.test_rules_guard`, the walkthrough number manifest (`--check`), the manifest's shape (`notebooks/numbers.json` holds numbers and strings only, is tracked by git, and names only public figures or local-only paths) and, when the page exists, the 13-check publication audit of `notebooks/possession_walkthrough_public.html` (a missing page is a clean skip). It fails loudly on any mismatch and never repairs one. A HEAD ahead of the local tag `final-candidate` is only a warning, because a docs-only follow-up is allowed while the rebuilt CSV keeps the frozen sha.
+`make freeze-check` is the one-command audit of the frozen artifact: it first asserts the frozen environment (Python 3.13.5 and all 34 pins installed at the pinned versions, compared by package name + version through `importlib.metadata`, printed as one line: `Python 3.13.5, 34 pins checked, 0 mismatches`; hard failure by default, with `--allow-env-drift` as the documented opt-out for a reviewer's knowingly different machine, which still prints every mismatch and still runs every CSV assertion). It then checks every module-level constant and string-keyed dict field against `docs/constant_provenance.json` (`scripts/constant_provenance.py --check`, 123 constants / 99 dict fields, printed as one line; a missing register is a clean skip). The scope is discovered from `possession/*.py`, so every file is either registered or named as exempt with a reason, and every entry's line is checked against the AST. It then builds twice, compares the files byte for byte, checks the sha256 `ee7b5b6b…46d8`, runs the organizer validator, counts 370 spells / 138 D stretches / 40,462 X, runs `tests.test_rules_guard`, the walkthrough number manifest (`--check`), the manifest's shape (`notebooks/numbers.json` holds numbers and strings only, is tracked by git, and names only public figures or local-only paths) and, when the page exists, the 13-check publication audit of `notebooks/possession_walkthrough_public.html` (a missing page is a clean skip). It fails loudly on any mismatch and never repairs one. A HEAD ahead of the local tag `final-candidate` is only a warning, because a docs-only follow-up is allowed while the rebuilt CSV keeps the frozen sha.
 
 Baseline+ persists the last near-ball owner's team through gaps, confirms changes with hysteresis,
 marks debounced out-of-bounds intervals dead until ball movement signals a restart, applies the

@@ -4,16 +4,25 @@ Anchors: work/DECISIONS.md D-029, work/cards/D05-freeze-final-configuration.md, 
 
     cd solution && make freeze-check
 
-For the B29 planted proof only, ``python scripts/freeze_check.py --only constant-provenance
---provenance-root scratch/B29/planted`` runs that one check against a scratch tree.  It prints
-PARTIAL and is never a freeze verdict.
+For the planted proofs only, ``python scripts/freeze_check.py --only constant-provenance
+--provenance-root scratch/B29/planted`` runs that one check against a scratch tree, and
+``--only environment --requirements ../scratch/B23/bad-requirements.txt`` runs the environment check
+against a scratch pin file.  Both print PARTIAL and are never a freeze verdict.
 
 Checks, in order:
 
 1. git identity -- HEAD, the local tag ``final-candidate`` and the files that differ.  A post-freeze
    ``HEAD`` is a **warning**, not a failure: D-029 allows a docs-only follow-up while the rebuilt
    CSV is still ``ee7b5b6b...46d8``, and the sha check below is the gate that decides.
-2. ``scripts/constant_provenance.py --check`` (E113/B29/B30): every module-level constant and every
+2. the frozen environment -- D-029 freezes Python **3.13.5** and **34 hash-pinned requirements**.  The
+   interpreter's ``major.minor.micro`` must match, and every package in ``requirements.txt`` must be
+   installed in the active environment at the pinned version, compared by normalized name + version
+   through ``importlib.metadata`` (never a text diff).  A missing pin counts as a mismatch.  It
+   prints one line -- Python version, pins checked, mismatches -- and runs before the builds, so a
+   drifted numpy/scikit-learn fails in ~0.2 s instead of after three minutes.  **Hard failure by
+   default**; ``--allow-env-drift`` is the documented opt-out for a reviewer's knowingly different
+   machine (it still prints every mismatch and says the run is not an environment verdict).
+3. ``scripts/constant_provenance.py --check`` (E113/B29/B30): every module-level constant and every
    string-keyed dict field in a registered module carries exactly one provenance tag in
    ``docs/constant_provenance.json``, no value has drifted from the register, ``scaffold`` hides
    no literal, every entry's ``line`` matches the AST, and every ``possession/*.py`` is either
@@ -42,7 +51,7 @@ Checks, in order:
     ``notebooks/possession_walkthrough_public.html`` is present, all 13 checks must pass; if it is
     absent the check is a clean skip, because the page is only built before a release (D-026).
     The audit starts in its own process just before the validator and is joined here, so its ~2 s
-    cost is hidden behind checks 5-11; it never overlaps the two builds or the sha assertion.
+    cost is hidden behind checks 6-12; it never overlaps the two builds or the sha assertion.
 
 A failure prints the specific mismatch (got X, the freeze says Y) and exits non-zero.  Nothing in
 this script edits a source file, the CSV or the manifest; ``outputs/submission.csv`` is only
@@ -59,6 +68,7 @@ import re
 import subprocess
 import sys
 import time
+from importlib import metadata
 
 SOLUTION = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(SOLUTION)
@@ -70,6 +80,8 @@ FROZEN_SPELLS = 370
 FROZEN_D_STRETCHES = 138
 FROZEN_X = 40462
 FROZEN_LABELS = collections.OrderedDict([("H", 50478), ("A", 35720), ("D", 72659), ("X", 40462)])
+FROZEN_PYTHON = "3.13.5"
+FROZEN_PINS = 34
 TAG = "final-candidate"
 
 
@@ -135,7 +147,7 @@ def classify(path):
 
 def git_identity():
     """Print HEAD vs the freeze tag; warn (never fail) on a post-freeze HEAD."""
-    print("== 1/12 git identity")
+    print("== 1/13 git identity")
     if git("rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
         raise Failure("not a git checkout: the freeze record names a commit and tag, so the identity "
                       "cannot be checked. Run this from the `solution/` repository.")
@@ -182,6 +194,100 @@ def git_identity():
     return head, tag_commit, status
 
 
+def canonical_name(name):
+    """PEP 503 normalization: ``scikit_learn``, ``scikit-learn`` and ``Scikit.Learn`` are one name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def read_pins(path):
+    """Pinned ``(canonical name -> (name, version))`` from a hash-locked requirements file.
+
+    Line continuations are joined, trailing ``--hash`` options are ignored, and an unreadable
+    requirement raises rather than being skipped: silently dropping a pin would make the check
+    vacuous.  Nothing here compares file text with the environment.
+    """
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read().replace("\\\r\n", " ").replace("\\\n", " ")
+    pins = collections.OrderedDict()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;]+)",
+                         line)
+        if not match:
+            raise Failure("cannot read a requirement in %s near %r; every line must be "
+                          "name==version with optional --hash options (refusing to skip a pin)."
+                          % (path, line[:90]))
+        name, version = match.group(1), match.group(2)
+        key = canonical_name(name)
+        if key in pins:
+            raise Failure("duplicate pin for %s in %s; one version per package, not two."
+                          % (name, path))
+        pins[key] = (name, version)
+    return pins
+
+
+def check_environment(requirements=None, allow_drift=False):
+    """B23: D-029's Python 3.13.5 and 34 hash-pinned requirements are part of the freeze.
+
+    Compare by normalized package name + version through ``importlib.metadata`` -- the same
+    semantics ``pip check`` uses -- not by a text diff of ``requirements.txt``.  A missing pin is a
+    mismatch, and a shrunken/duplicated pin file fails before any comparison, so the check cannot
+    pass vacuously.  It is offline, installs and repairs nothing, and runs before the builds so
+    drift fails in ~0.2 s rather than after three minutes.  Hard failure by default; the
+    documented ``--allow-env-drift`` opt-out still prints every mismatch, then continues with a
+    warning that the run is not an environment verdict.
+    """
+    print("== 2/13 frozen environment")
+    path = os.path.abspath(requirements or os.path.join(SOLUTION, "requirements.txt"))
+    if not os.path.isfile(path):
+        raise Failure("requirements file not found at %s; the D-029 environment cannot be asserted."
+                      % path)
+    pins = read_pins(path)
+    if len(pins) != FROZEN_PINS:
+        raise Failure("%s holds %d pins, but the D-029 freeze names %d hash-pinned requirements. "
+                      "A pin was added, removed or merged; that is a freeze change, not environment "
+                      "drift, so --allow-env-drift does not cover it."
+                      % (path, len(pins), FROZEN_PINS))
+
+    python_now = ".".join(str(part) for part in sys.version_info[:3])
+    drift = []
+    if python_now != FROZEN_PYTHON:
+        drift.append("python: installed %s, the D-029 freeze says %s" % (python_now, FROZEN_PYTHON))
+    for name, wanted in pins.values():
+        try:
+            installed = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            installed = None
+        if installed != wanted:
+            drift.append("package %s: installed %s, %s pins %s"
+                         % (name, installed or "(not installed)", os.path.basename(path), wanted))
+
+    label = "ok  " if not drift else ("warn" if allow_drift else "FAIL")
+    print("  %s environment        Python %s, %d pins checked, %d mismatch%s"
+          % (label, python_now, len(pins), len(drift), "" if len(drift) == 1 else "es"))
+    if not drift:
+        if allow_drift:
+            print("       --allow-env-drift given, but nothing drifted; the flag changed nothing.")
+        return
+
+    for line in drift:
+        print("       " + line)
+    if allow_drift:
+        print("       --allow-env-drift: continuing on a knowingly different machine. This run is")
+        print("       not an environment verdict; the CSV/sha assertions below still decide the build.")
+        return
+
+    raise Failure(
+        "environment drift -- the active interpreter does not match the D-029 freeze:\n  "
+        + "\n  ".join(drift)
+        + "\n  Run this target with solution/.venv/bin/python built from requirements.txt\n"
+          "  (Q04: Python %s, %d hash pins), or pass --allow-env-drift on a reviewer's knowingly\n"
+          "  different machine (the CSV assertions then still run). Nothing is installed or repaired."
+          % (FROZEN_PYTHON, FROZEN_PINS))
+
+
 def check_constants(root=None):
     """E113/B29: the shipped constants and dict fields agree with their provenance register.
 
@@ -189,7 +295,7 @@ def check_constants(root=None):
     the rule, shared with ``make test``.  It runs before the builds: a constant retune that changes
     provenance without changing the CSV would otherwise pass every other check on this path.
     """
-    print("== 2/12 constant provenance")
+    print("== 3/13 constant provenance")
     root = SOLUTION if root is None else os.path.abspath(root)
     register = os.path.join(root, "docs", "constant_provenance.json")
     if not os.path.isfile(register):
@@ -238,7 +344,7 @@ def check_constants(root=None):
 
 def build_twice():
     """Rebuild the submission twice and compare the bytes."""
-    print("== 3/12 two builds, byte-identical")
+    print("== 4/13 two builds, byte-identical")
     os.makedirs(SCRATCH, exist_ok=True)
     canonical = os.path.join(SOLUTION, "outputs", "submission.csv")
     second = os.path.join(SCRATCH, "build2.csv")
@@ -267,7 +373,7 @@ def build_twice():
 
 
 def check_sha(path, sha):
-    print("== 4/12 frozen sha256")
+    print("== 5/13 frozen sha256")
     if sha != FROZEN_SHA:
         raise Failure(
             "sha256 mismatch: the rebuilt CSV is %s\n"
@@ -282,7 +388,7 @@ def check_sha(path, sha):
 
 def check_validator(path):
     """Run the organizer's validator on the rebuilt CSV; assert Valid + 199,319 rows."""
-    print("== 5/12 organizer validator")
+    print("== 6/13 organizer validator")
     repo = os.path.abspath(os.environ.get(
         "MTAH_REPO_DIR", os.path.join(ROOT, "more-than-a-hack-2027")))
     validator = os.path.join(repo, "evaluation", "validate_submission.py")
@@ -347,7 +453,7 @@ def maximal_D_runs(labels):
 
 def check_counts(path):
     """Count spells / D stretches / X from the CSV itself (not from the manifest)."""
-    print("== 6/12 frozen shape")
+    print("== 7/13 frozen shape")
     labels = read_labels(path)
     expect("rows", len(labels), FROZEN_ROWS)
 
@@ -369,7 +475,7 @@ def check_counts(path):
 
 
 def check_rules_guard():
-    print("== 7/12 tests.test_rules_guard + tests.test_prose_guard")
+    print("== 8/13 tests.test_rules_guard + tests.test_prose_guard")
     out, elapsed = run([sys.executable, "-m", "unittest",
                         "tests.test_rules_guard", "tests.test_prose_guard"],
                        cwd=SOLUTION, log=os.path.join(SCRATCH, "rules_guard.log"))
@@ -387,7 +493,7 @@ def check_rules_guard():
 
 def check_numbers():
     """Merged B22: a post-freeze commit may not move a published number unnoticed."""
-    print("== 8/12 walkthrough number manifest")
+    print("== 9/13 walkthrough number manifest")
     script = os.path.join(SOLUTION, "scripts", "walkthrough_numbers.py")
     if not os.path.isfile(script):
         raise Failure("missing %s; the number manifest is the docs-drift gate (B22)." % script)
@@ -438,7 +544,7 @@ def check_keeper_contract():
     silently loses ``gk_possession`` this fails, instead of only a later diagnostic noticing. The
     check is a diagnostic contract only -- ``gk_possession`` stays out of the build (D-028/D-029).
     """
-    print("== 9/12 keeper exclusion contract")
+    print("== 10/13 keeper exclusion contract")
     import numpy as np
     from unittest import mock
 
@@ -500,7 +606,7 @@ def check_provenance():
     the adoption report names its ablation base rule, and a reference log names a real git commit
     (never ``unknown``). A broken install or stale digest fails the freeze instead of a diagnostic.
     """
-    print("== 10/12 provenance statuses")
+    print("== 11/13 provenance statuses")
     import numpy as np
     from unittest import mock
 
@@ -554,7 +660,7 @@ def _surfaces():
 
 def check_manifest_shape():
     """B28: the tracked number manifest holds numbers and strings, never an array of coordinates."""
-    print("== 11/12 numbers manifest shape")
+    print("== 12/13 numbers manifest shape")
     surfaces = _surfaces()
     try:
         report = surfaces.check_manifest()
@@ -565,7 +671,7 @@ def check_manifest_shape():
 
 
 def _public_page_start():
-    """Start the public-page audit now so checks 4-10 run while it does (B28)."""
+    """Start the public-page audit now so checks 6-12 run while it does (B28)."""
     return _surfaces().start_public_page()
 
 
@@ -573,9 +679,9 @@ def check_public_page(proc=None):
     """B28/P04: if the public page exists, its 13-check publication audit must pass; else skip.
 
     ``proc`` is the audit process started just before the validator; joining it here hides the
-    audit's ~2 s behind checks 4-10 without ever overlapping the two builds.
+    audit's ~2 s behind checks 6-12 without ever overlapping the two builds.
     """
-    print("== 12/12 public walkthrough page")
+    print("== 13/13 public walkthrough page")
     surfaces = _surfaces()
     try:
         report = surfaces.check_public_page(proc=proc)
@@ -604,19 +710,32 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Assert the D-029 freeze; fail loudly, never repair.")
     ap.add_argument("--scratch", default=SCRATCH,
                     help="directory for the second build and logs (default: %(default)s)")
-    ap.add_argument("--only", choices=("constant-provenance",), default=None,
-                    help="run only this fast check and exit; for the B29 proof/debug, prints PARTIAL "
-                         "and is never a freeze verdict")
+    ap.add_argument("--only", choices=("constant-provenance", "environment"), default=None,
+                    help="run only this fast check and exit; for the B29/B23 proofs and debugging, "
+                         "prints PARTIAL and is never a freeze verdict")
     ap.add_argument("--provenance-root", default=None,
                     help="with --only constant-provenance, check a scratch tree's modules and "
                          "docs/constant_provenance.json instead of solution/")
+    ap.add_argument("--requirements", default=None,
+                    help="with --only environment, read this hash-locked pin file instead of "
+                         "solution/requirements.txt (planted proof; does not install anything)")
+    ap.add_argument("--allow-env-drift", action="store_true",
+                    help="downgrade a Python/package version mismatch to a warning for a reviewer's "
+                         "knowingly different machine; every mismatch is still printed and the CSV "
+                         "assertions still run (default: hard failure)")
     args = ap.parse_args(argv)
     SCRATCH = os.path.abspath(args.scratch)
+
+    if args.requirements and args.only != "environment":
+        ap.error("--requirements is only valid with --only environment")
 
     if args.only:
         print("PARTIAL freeze check -- only %r; this is not a freeze verdict." % args.only)
         try:
-            check_constants(args.provenance_root)
+            if args.only == "environment":
+                check_environment(args.requirements, args.allow_env_drift)
+            else:
+                check_constants(args.provenance_root)
         except Failure as error:
             return report_failure(error, "PARTIAL CHECK")
         print("\nPARTIAL CHECK PASSED -- run `make freeze-check` for the freeze verdict")
@@ -636,6 +755,7 @@ def main(argv=None):
                           "refusing to call that a freeze check." % (imported, SOLUTION))
         print("  ok   import             %s" % imported)
 
+        check_environment(allow_drift=args.allow_env_drift)
         check_constants()
         path, sha = build_twice()
         check_sha(path, sha)
