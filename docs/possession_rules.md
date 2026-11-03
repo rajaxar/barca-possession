@@ -55,8 +55,9 @@ it adds no delay. The explicit half-second merge over a list of contacts
 *Why:* single-contact possessions are a real population — 767 of 3,061 practice-match possessions
 (25%) contain exactly one own-team touch, median 2.2 s, and 44% of those are 2 seconds or shorter.
 Possessions started by an opposing touch include 12% of 1 second or less. The merge window is
-deliberately shorter than the shortest possession R08's label-side bound says we must keep (1.0 s), so
-it cannot erase a genuine single-touch possession.
+deliberately shorter than the shortest possession R08's label-side bound says we must keep (1.0 s).
+Spells shorter than the 0.64 s window are below that bound anyway; the short-spell floor, not the
+merge, is the rule that removes them.
 
 ## 4. We do not rebuild possessions from touches
 
@@ -78,16 +79,16 @@ an oracle restart owner loses .13.
 
 A dead ball is a referee stoppage, not a geometry fact. A frame is `D` from the moment play stops
 (ball out, foul, offside, goal, injury, cooling break) until the restart is taken. The Law stops play for reasons that are not geometric — a foul, an offside, an injury — and the ball
-is often still on the pitch; on the practice matches only about a third of dead-ball onsets coincide
-with an out-of-bounds event (E25). We label `D`; we never label who owns a dead ball, because the
+is often still on the pitch. The practice set's dead-ball labels are the providers' dead flags (R09),
+which include those states, not only the ball leaving the field. We label `D`; we never label who owns a dead ball, because the
 organizers do not ask.
 
 *In the code:* `baseline_plus.py::_dead_mask` starts `D` on a debounced ball excursion beyond the
 pitch (0.5 m margin, 6 frames) and ends it at the first sustained in-pitch ball movement (3 m/s for 10
 frames). Everything else is added by the four rules below.
 
-*Why:* dead stretches run from a few seconds to two minutes on the practice matches (E39), so their
-edges are cheap and their existence is not: a missing dead stretch joins two possessions into one, and a spurious one
+*Why:* dead stretches on the practice matches run from a few seconds to about a minute (median
+11.5-24 s, S05), so their edges are cheap and their existence is not: a missing dead stretch joins two possessions into one, and a spurious one
 splits a possession in two and costs a false positive as well.
 
 ### 5a. A long ball-missing stretch is a stoppage

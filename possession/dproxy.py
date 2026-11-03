@@ -40,8 +40,9 @@ the source.
 Both thresholds are inherited, not fitted:
 
 * **2 s duration floor** -- E25's external-trained classifier gives P(D | missing run) of
-  .09 / .39 / .58 / .85 for runs of <=3 / 3-6 / 6-12 / >12 s, and Q08 found the two runs <=1 s in
-  the public window carried no signal (0 D frames). 2 s is where P(D) first exceeds a coin flip.
+  .09 / .39 / .58 / .85 for runs of <=3 / 3-6 / 6-12 / >12 s, so a run shorter than 2 s carries
+  less than a coin flip's evidence. The exact floor is also immaterial on our match: gaps under 2 s
+  are 0.05% of graded frames (E69), so no label-free quantity moves with it.
 * **1.5 m/s stillness** -- the walk/jog boundary used by I01, E25, E15 and E38; it is the 53rd
   percentile of a half's mean player speed on this match (E15 sec. 1), i.e. a football constant, and
   it reproduces E15's "dead-ish" state exactly, so an E15 cue can be scored against this module
@@ -207,7 +208,7 @@ from .structure import PITCH_L, PITCH_W, structure
 FPS = 25.0
 
 # ---------------------------------------------------------------- inherited constants (see docstring)
-MIN_RUN_S = 2.0      # E25 gap-length gradient .09/.39/.58/.85; Q08 <=1 s runs carry no D
+MIN_RUN_S = 2.0      # E25 gap-length gradient .09/.39/.58/.85; gaps <2 s are 0.05% of graded (E69)
 STILL_V = 1.5        # walk/jog boundary: I01, E25, E15, E38
 SPEED_CLIP = 12.0    # physical sprint guard (E16 speed spikes), not a fitted cut
 
