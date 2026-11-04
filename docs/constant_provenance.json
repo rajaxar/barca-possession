@@ -1825,6 +1825,10 @@
   "possession/broadcast.py": {
    "category": "not shipped",
    "why": "E06 broadcast sensor: live mask, cached accessor, ball fusion and director FOV (7 constants). Report-only \u2014 nothing on the make_submission path imports it, it reads no labels and writes no label (D-029). Its cold 12 s cloud scan is cached by the loader machinery as bc-live-v1."
+  },
+  "possession/restarts.py": {
+   "category": "not shipped",
+   "why": "E08 restart-timing/restart-team candidate (16 constants). Nothing on the make_submission or build_labels path imports it; it is a measured research interface for E37/E58, and its numbers and the verdict are in research/E08_result.md."
   }
  }
 }

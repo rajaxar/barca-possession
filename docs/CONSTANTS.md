@@ -41,7 +41,7 @@ The scope is **discovered, not listed in code**: every `possession/*.py` except 
 
 Registered (14): the stage writers (`pipeline` and `make_submission` declare no constant), the training-data simulator, `config`, the modules a shipped stage reads values from (`dproxy`, `ballfree`), and `features`, whose columns feed the ball-free model.
 
-Exempt (15), each named with its justification. The last column is computed, not claimed: the import/call graph from `possession/make_submission.py` is walked, function-local imports included (`audio` is imported inside `audio_status_line`). `label path` means a function of the module is called from `pipeline.build_labels`; `imported, never called` means the module is loaded on the build path but no function of it runs there.
+Exempt (16), each named with its justification. The last column is computed, not claimed: the import/call graph from `possession/make_submission.py` is walked, function-local imports included (`audio` is imported inside `audio_status_line`). `label path` means a function of the module is called from `pipeline.build_labels`; `imported, never called` means the module is loaded on the build path but no function of it runs there.
 
 | module | category | why it holds no shipped decision value | reachability |
 |---|---|---|---|
@@ -57,6 +57,7 @@ Exempt (15), each named with its justification. The last column is computed, not
 | `possession/gk_possession.py` | report-only | E38 keeper-in-possession detector (23 constants). dproxy calls it for a report-only keeper table; its mask never writes a label, and growd inherits only dproxy's own three values. | imported, never called |
 | `possession/hsmm.py` | not shipped | E09 HSMM/Viterbi decoder arm, dropped by D-028 (7 constants). pipeline.py does not import it. | not reachable |
 | `possession/render.py` | not shipped | Top-down clip renderer for figures and the notebook (13 constants). Nothing on the CSV path imports it. | not reachable |
+| `possession/restarts.py` | not shipped | E08 restart-timing/restart-team candidate (16 constants). Nothing on the make_submission or build_labels path imports it; it is a measured research interface for E37/E58, and its numbers and the verdict are in research/E08_result.md. | not reachable |
 | `possession/spells_from_events.py` | not shipped | E03 event-first decoder behind the closed touch arm (4 constants). pipeline.py does not import it. | not reachable |
 | `possession/supervised.py` | not shipped | E10 learned frame model, not shipped and not imported by make_submission (12 constants). Its own docstring records the status. | not reachable |
 | `possession/touches.py` | not shipped | E02 ball-touch detector behind the closed event-first arm (3 constants). Nothing on the CSV path imports it. | not reachable |

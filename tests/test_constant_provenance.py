@@ -160,7 +160,7 @@ class ExemptionsAreProven(unittest.TestCase):
         self.assertEqual(problems, [], "an exemption contradicts the import graph:\n  "
                          + "\n  ".join(problems))
         report = cp.exemption_report()
-        self.assertEqual(len(report), 14, "the graph did not classify every exemption")
+        self.assertEqual(len(report), 15, "the graph did not classify every exemption")
         for mod, row in report.items():
             with self.subTest(module=mod):
                 self.assertIn(row["category"], cp.EXEMPT_CATEGORIES)
