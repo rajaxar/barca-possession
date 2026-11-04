@@ -41,11 +41,12 @@ The scope is **discovered, not listed in code**: every `possession/*.py` except 
 
 Registered (14): the stage writers (`pipeline` and `make_submission` declare no constant), the training-data simulator, `config`, the modules a shipped stage reads values from (`dproxy`, `ballfree`), and `features`, whose columns feed the ball-free model.
 
-Exempt (14), each named with its justification. The last column is computed, not claimed: the import/call graph from `possession/make_submission.py` is walked, function-local imports included (`audio` is imported inside `audio_status_line`). `label path` means a function of the module is called from `pipeline.build_labels`; `imported, never called` means the module is loaded on the build path but no function of it runs there.
+Exempt (15), each named with its justification. The last column is computed, not claimed: the import/call graph from `possession/make_submission.py` is walked, function-local imports included (`audio` is imported inside `audio_status_line`). `label path` means a function of the module is called from `pipeline.build_labels`; `imported, never called` means the module is loaded on the build path but no function of it runs there.
 
 | module | category | why it holds no shipped decision value | reachability |
 |---|---|---|---|
 | `possession/audio.py` | report-only | Referee-whistle decoder (31 constants). `make_submission` imports it only to print the after-the-write `audio: ok\|reason` line, which cannot change the CSV or the exit code (S26) — so it runs during the build but never writes a label. Reclassified from 'not shipped', which was false. | imported, never called |
+| `possession/broadcast.py` | not shipped | E06 broadcast sensor: live mask, cached accessor, ball fusion and director FOV (7 constants). Report-only — nothing on the make_submission path imports it, it reads no labels and writes no label (D-029). Its cold 12 s cloud scan is cached by the loader machinery as bc-live-v1. | not reachable |
 | `possession/clean.py` | not shipped | Label-free tracking cleaner used by research scripts (3 constants). The shipped pipeline reads the raw ATD through data.load_match, so no cleaning default can move a label. | not reachable |
 | `possession/data.py` | loader/parser | ATD and Smart-Tagging loader: array layout, chunk sizes, pitch defaults and column codes (7 constants). It reads and reshapes provider files and holds no decision value; E113 left loader/parser constants to a later card. | label path |
 | `possession/deadball.py` | not shipped | E07's dead-ball sharpeners, all default-off and tier 2 (18 constants). pipeline.py states it is not imported by construction; the primary whole-gap rule lives in the registered dgate. | not reachable |

@@ -1821,6 +1821,10 @@
   "possession/touches.py": {
    "category": "not shipped",
    "why": "E02 ball-touch detector behind the closed event-first arm (3 constants). Nothing on the CSV path imports it."
+  },
+  "possession/broadcast.py": {
+   "category": "not shipped",
+   "why": "E06 broadcast sensor: live mask, cached accessor, ball fusion and director FOV (7 constants). Report-only \u2014 nothing on the make_submission path imports it, it reads no labels and writes no label (D-029). Its cold 12 s cloud scan is cached by the loader machinery as bc-live-v1."
   }
  }
 }
