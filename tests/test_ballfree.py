@@ -69,6 +69,37 @@ class BallFree(unittest.TestCase):
         self.assertEqual(ballfree.flip_sign_accuracy(ref, p), (1, 1.0))
         self.assertEqual(ballfree.flip_sign_accuracy(ref, 1 - p), (1, 0.0))
 
+    def test_degenerate_columns_are_dropped_and_inert(self):
+        """An all-NaN column used to crash the HGB binner; a constant one must not change the fit."""
+        match, wide = long_match()
+        rows, X, Xs = ballfree.sample_table(match)
+        y = wide[rows].astype(int)
+        ref = {"logreg": ballfree.fit([(X, Xs, y)], "logreg"),
+               "hgb": ballfree.fit([(X, Xs, y)], "hgb")}
+        for name, value in (("e22_all_nan", np.nan), ("e22_constant", 1.0)):
+            Xb, Xsb = X.copy(), Xs.copy()
+            Xb[name] = value
+            Xsb[name] = value
+            j = list(Xb.columns).index(name)
+            for kind in ("logreg", "hgb"):
+                model = ballfree.fit([(Xb, Xsb, y)], kind)
+                self.assertFalse(bool(model.keep_[j]), (name, kind))
+                self.assertNotIn(name, list(model.columns_), (name, kind))
+                p = ballfree.predict(model, Xb, Xsb)
+                self.assertTrue(np.isfinite(p).all())
+                np.testing.assert_allclose(p, ballfree.predict(ref[kind], X, Xs), atol=1e-9)
+
+    def test_only_degenerate_columns_raise(self):
+        n = 200
+        X = pd.DataFrame({"a": np.full(n, np.nan), "b": np.ones(n)})
+        with self.assertRaises(ValueError):
+            ballfree.fit([(X, X, np.zeros(n, dtype=int))], "hgb")
+        # a model pickled before the guard has no keep_ and still predicts on the full matrix
+        m = ballfree.make_model("logreg").fit(np.c_[np.arange(n), np.arange(n) % 2], np.arange(n) % 2)
+        self.assertIsNone(getattr(m, "keep_", None))
+        z = ballfree._matrix(m, pd.DataFrame(np.zeros((3, 2))))
+        self.assertEqual(z.shape, (3, 2))
+
 
 if __name__ == "__main__":
     unittest.main()

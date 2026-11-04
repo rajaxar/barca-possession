@@ -134,16 +134,42 @@ def make_model(kind):
 
 
 def fit(tables, kind="hgb"):
-    """tables: iterable of (X, Xswap, y) with y = 1 when home owns (H), 0 when away (A)."""
+    """tables: iterable of (X, Xswap, y) with y = 1 when home owns (H), 0 when away (A).
+
+    Degenerate design columns (all-NaN, or a single distinct value) are dropped before the
+    estimator sees them and recorded in ``model.keep_`` / ``model.columns_``; :func:`predict`
+    applies the same selection. This is inert unless a training table actually contains such a
+    column -- on the ten external games every one of the 128 columns takes at least two values --
+    but without it an all-NaN column crashes the HGB binner ("window shape cannot be larger than
+    input array shape"), which is exactly what a new dataset with a missing (e.g. goalkeeper)
+    channel would look like.
+    """
     X = pd.concat([t for tb in tables for t in (tb[0], tb[1])])
     y = np.concatenate([np.r_[tb[2], 1 - tb[2]] for tb in tables])
-    return clone(make_model(kind)).fit(X.to_numpy(), y)
+    keep = X.nunique(dropna=False).to_numpy() > 1
+    if not keep.any():
+        raise ValueError("every design column is constant or all-NaN; nothing to fit")
+    model = clone(make_model(kind)).fit(X.to_numpy()[:, keep], y)
+    model.keep_ = keep
+    model.columns_ = np.asarray(X.columns)[keep]
+    return model
+
+
+def _matrix(model, X):
+    """Numeric matrix with the training-time column selection of ``model`` applied."""
+    a = X.to_numpy()
+    keep = getattr(model, "keep_", None)
+    if keep is None:  # a model pickled before the degenerate-column guard
+        return a
+    if a.shape[1] != len(keep):
+        raise ValueError("design matrix has {} columns, model was fitted on {}".format(a.shape[1], len(keep)))
+    return a[:, keep]
 
 
 def predict(model, X, Xswap):
     """Antisymmetrised P(H) for the sampled rows."""
-    return 0.5 * (model.predict_proba(X.to_numpy())[:, 1]
-                  + 1 - model.predict_proba(Xswap.to_numpy())[:, 1])
+    Xa, Xb = _matrix(model, X), _matrix(model, Xswap)
+    return 0.5 * (model.predict_proba(Xa)[:, 1] + 1 - model.predict_proba(Xb)[:, 1])
 
 
 def to_frames(rows, p, n_frames, half):
