@@ -1,26 +1,32 @@
-"""Render the **public** walkthrough profile to one standalone HTML file.
+"""Render either walkthrough profile to one standalone HTML file.
 
 This is an export of the notebook the builder already produces, not a second source: the cells,
-prose, captions and figures all come from ``build_walkthrough.build_notebook(numbers, "public")``.
+prose, captions and figures all come from ``build_walkthrough.build_notebook(numbers, profile)``.
 Every image is inlined as a ``data:`` URI, there is no JavaScript, no web font and no external
 request, so the page opens offline and can be read at 700-900 px.
 
     cd solution
-    .venv/bin/python scripts/build_walkthrough_html.py          # -> notebooks/possession_walkthrough_public.html
-    .venv/bin/python scripts/audit_walkthrough_public.py        # publication audit, exit code 0/1
+    .venv/bin/python scripts/build_walkthrough_html.py                      # public (default)
+    .venv/bin/python scripts/build_walkthrough_html.py --profile local      # local reading copy
+    .venv/bin/python scripts/audit_walkthrough_public.py                    # publication audit, exit 0/1
 
 The public profile replaces every real-tracking figure with a neutral placeholder (D-002/D-026), so
 the page is safe to hand to a reader. It is still **not published** here: the file stays on disk
-until the human decides. One presentation-only edit is made in this exporter, never in the
-notebook: internal work-card ids in prose (``(E83)``) are removed, because a reader has no use for
-them and the card requires no card id outside the appendix. Published decision ids (``D-xxx``) and
-the traceability appendix are kept.
+until the human decides. The local profile inlines the rendered clips; it is **personal and
+local-only**, must never be committed, published or uploaded, and its footer records the CSV sha and
+the git commit it was built from.
+
+One presentation-only edit is made in this exporter, never in the notebook: internal work-card ids
+in prose (``(E83)``) are removed, because a reader has no use for them and the card requires no card
+id outside the appendix. Published decision ids (``D-xxx``) and the traceability appendix are kept.
 """
 import argparse
 import base64
+import hashlib
 import html
 import os
 import re
+import subprocess
 import sys
 
 SOLUTION_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,7 +35,10 @@ sys.path.insert(0, os.path.join(SOLUTION_DIR, "scripts"))
 
 import build_walkthrough as bw  # noqa: E402  (same folder; no pipeline import)
 
-DEFAULT_OUT = os.path.join(SOLUTION_DIR, "notebooks", "possession_walkthrough_public.html")
+DEFAULT_OUT = {
+    "public": os.path.join(SOLUTION_DIR, "notebooks", "possession_walkthrough_public.html"),
+    "local": os.path.join(SOLUTION_DIR, "notebooks", "possession_walkthrough_local.html"),
+}
 MIME = {".png": "image/png", ".gif": "image/gif", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
 # Internal work-card ids have no meaning to a reader. Decision ids (D-xxx) are published citations
@@ -91,6 +100,16 @@ tbody tr:nth-child(even) { background: #fafbfa; }
   h2 { break-after: avoid; page-break-after: avoid; }
   figure, table { break-inside: avoid; page-break-inside: avoid; }
 }
+"""
+
+# Only the local page carries a build footer. Keeping it out of the public CSS is what makes the
+# generalized exporter byte-identical on the public path when the notebook is unchanged.
+FOOTER_CSS = """
+footer.build {
+  margin-top: 3em; padding-top: 1em; border-top: 1px solid var(--rule);
+  font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+}
+footer.build code { font-size: 0.95em; word-break: break-all; }
 """
 
 
@@ -177,10 +196,10 @@ def _markdown(text):
 
 # --------------------------------------------------------------------------- images / cells
 
-def _data_uri(src):
+def _data_uri(src, profile="public"):
     path = os.path.join(SOLUTION_DIR, "notebooks", src)
     if not os.path.isfile(path):
-        raise SystemExit("missing figure for the public profile: %s" % path)
+        raise SystemExit("missing figure for the %s profile: %s" % (profile, path))
     ext = os.path.splitext(path)[1].lower()
     mime = MIME.get(ext)
     if mime is None:
@@ -190,12 +209,12 @@ def _data_uri(src):
     return "data:%s;base64,%s" % (mime, base64.b64encode(payload).decode("ascii")), len(payload)
 
 
-def _html_cell(source):
+def _html_cell(source, profile="public"):
     """Inline the images, turn (img, caption) pairs into <figure>, make the two-up block wrap."""
     source = source.replace('style="display:flex;"', 'class="figpair"')
 
     def inline_img(m):
-        uri, _ = _data_uri(m.group(1))
+        uri, _ = _data_uri(m.group(1), profile)
         return 'src="%s"' % uri
 
     source = re.sub(r'src="([^"]+)"', inline_img, source)
@@ -212,8 +231,32 @@ def _html_cell(source):
     return source
 
 
-def render_html(numbers):
-    nb, _ = bw.build_notebook(numbers, "public")
+def _footer(numbers):
+    """Deterministic build footer: no wall-clock time, so rebuilds are comparable."""
+    csv_path = os.path.join(SOLUTION_DIR, "outputs", "submission.csv")
+    if os.path.isfile(csv_path):
+        with open(csv_path, "rb") as f:
+            csv_sha = hashlib.sha256(f.read()).hexdigest()
+    else:
+        csv_sha = "unavailable (outputs/submission.csv is missing)"
+    try:
+        commit = subprocess.check_output(
+            ["git", "-C", SOLUTION_DIR, "rev-parse", "--short=12", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True).strip()
+    except (OSError, subprocess.CalledProcessError):
+        commit = "unknown (not a git checkout)"
+    return (
+        '<footer class="build">'
+        'Local reading copy, built from the frozen CSV at sha256 <code>%s</code> '
+        'and git commit <code>%s</code>. '
+        'It contains real-tracking figures rendered from match and external-game data: '
+        '<strong>do not commit, publish or upload it</strong> (D-002/D-026).'
+        '</footer>' % (html.escape(csv_sha), html.escape(commit))
+    )
+
+
+def render_html(numbers, profile="public"):
+    nb, _ = bw.build_notebook(numbers, profile)
     body, images = [], []
     in_appendix = False
     for cell in nb["cells"]:
@@ -223,11 +266,13 @@ def render_html(numbers):
             body.append('<div class="appendix">')
         if "<img" in source:
             images.extend(re.findall(r'src="([^"]+)"', source))
-            body.append(_html_cell(source))
+            body.append(_html_cell(source, profile))
         else:
             body.append(_markdown(source))
     if in_appendix:
         body.append("</div>")
+    if profile == "local":
+        body.append(_footer(numbers))
     doc = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -235,7 +280,7 @@ def render_html(numbers):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reading the ball — a traceable possession walkthrough</title>
 <meta name="description" content="A traceable walkthrough of a frame-level football possession model, More than a Hack 2027.">
-<meta name="generator" content="solution/scripts/build_walkthrough_html.py (public profile)">
+<meta name="generator" content="solution/scripts/build_walkthrough_html.py (%s profile)">
 <style>%s</style>
 </head>
 <body>
@@ -244,21 +289,23 @@ def render_html(numbers):
 </main>
 </body>
 </html>
-""" % (CSS, "\n\n".join(body))
+""" % (profile, CSS + (FOOTER_CSS if profile == "local" else ""), "\n\n".join(body))
     return doc, images
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--profile", choices=("public", "local"), default="public")
+    ap.add_argument("--out", help="default: notebooks/possession_walkthrough_<profile>.html")
     args = ap.parse_args(argv)
+    out = args.out or DEFAULT_OUT[args.profile]
     numbers, _ = bw.load_numbers()
-    doc, images = render_html(numbers)
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    with open(args.out, "w", encoding="utf-8") as f:
+    doc, images = render_html(numbers, args.profile)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
         f.write(doc)
-    size = os.path.getsize(args.out)
-    print("wrote %s" % args.out)
+    size = os.path.getsize(out)
+    print("wrote %s (%s profile)" % (out, args.profile))
     print("  %.1f KiB, %d inlined images (%d distinct files)" % (
         size / 1024.0, len(images), len(set(images))))
     return 0

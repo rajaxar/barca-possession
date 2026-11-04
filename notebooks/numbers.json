@@ -33,6 +33,60 @@
       "tolerance": 0.0,
       "value": 0.085
     },
+    "attrib_floor": {
+      "command": "grep -n -m1 '\\| \\*\\*floor\\*\\* \\| \\.4144 \\| \\*\\*(\\+\\.0114)\\*\\*' research/E98_attribution.md",
+      "display": "+.0114",
+      "note": "leave-one-out marginal at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0114
+    },
+    "attrib_grown": {
+      "command": "grep -n -m1 '\\| \\*\\*grown D\\*\\* \\| \\.4213 \\| \\*\\*(\\+\\.0045)\\*\\*' research/E98_attribution.md",
+      "display": "+.0045",
+      "note": "leave-one-out marginal at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0045
+    },
+    "attrib_ingap_seed0": {
+      "command": "grep -n -m1 '\\| \\*\\*in-gap\\*\\* \\| \\.4267 \\| \\*\\*(\u2212\\.0009)\\*\\*' research/E98_attribution.md",
+      "display": "\u2212.0009",
+      "note": "leave-one-out marginal at master, seed 0 (superseded by E112)",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": -0.0009
+    },
+    "attrib_interaction": {
+      "command": "grep -n -m1 'three post-`ship` stages\\)\\*\\* \\| \\*\\*(\u2212\\.0013)\\*\\*' research/E98_attribution.md",
+      "display": "\u2212.0013",
+      "note": "sum of three marginals minus the measured combined run",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": -0.0013
+    },
+    "attrib_subgap": {
+      "command": "grep -n -m1 '\\| \\*\\*sub-gap\\*\\* \\| \\.4195 \\| \\*\\*(\\+\\.0062)\\*\\*' research/E98_attribution.md",
+      "display": "+.0062",
+      "note": "leave-one-out marginal at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0062
+    },
+    "attrib_sum": {
+      "command": "grep -n -m1 'grown D \\+ sub-gap \\+ floor\\*\\* \\| \\*\\*(\\+\\.0221)\\*\\*' research/E98_attribution.md",
+      "display": "+.0221",
+      "note": "sum of the three post-ship marginals",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0221
+    },
     "ball_in_play_min": {
       "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show ball_in_play_min",
       "display": "57.47 min",
@@ -413,6 +467,24 @@
       "tolerance": 0.0,
       "value": 0.002
     },
+    "external_inplay_rate": {
+      "command": "grep -n -m1 'games average \\*\\*55\\.56 \u00b1 6\\.37 live min and (58\\.21) \u00b1 (6\\.38)% share\\*\\*' research/E105_inplay_rate.md",
+      "display": "58.21%",
+      "note": "mean live share of the ten external games",
+      "recomputed": false,
+      "source": "research/E105_inplay_rate.md",
+      "tolerance": 0.0,
+      "value": 0.5821
+    },
+    "external_inplay_sd": {
+      "command": "grep -n -m1 'games average \\*\\*55\\.56 \u00b1 6\\.37 live min and 58\\.21 \u00b1 (6\\.38)% share\\*\\*' research/E105_inplay_rate.md",
+      "display": "6.38%",
+      "note": "between-game sd of the external live share",
+      "recomputed": false,
+      "source": "research/E105_inplay_rate.md",
+      "tolerance": 0.0,
+      "value": 0.0638
+    },
     "flaw_target_auc": {
       "command": "grep -n -m1 'target (\\.80) not met' work/FINDINGS.md",
       "display": ".80",
@@ -633,6 +705,33 @@
       "tolerance": 0.0,
       "value": 0.439
     },
+    "headline_six_draw": {
+      "command": "grep -n -m1 '6-seed pooled\\*\\* \\| \\*\\*\\.4240\\*\\* \\| \\*\\*\\.4037\\*\\* \\| \\*\\*(\\+\\.0203)\\*\\*' research/E103_seed_stability.md",
+      "display": "+.0203",
+      "note": "master - ship over six degradation draws",
+      "recomputed": false,
+      "source": "research/E103_seed_stability.md",
+      "tolerance": 0.0,
+      "value": 0.0203
+    },
+    "headline_six_draw_hi": {
+      "command": "grep -n -m1 '6-seed pooled\\*\\* \\| \\*\\*\\.4240\\*\\* \\| \\*\\*\\.4037\\*\\* \\| \\*\\*\\+\\.0203\\*\\* \\| \\*\\*\\[\\+\\.0166, \\+(\\.0241)\\]' research/E103_seed_stability.md",
+      "display": "+.0241",
+      "note": "upper end of the six-draw interval",
+      "recomputed": false,
+      "source": "research/E103_seed_stability.md",
+      "tolerance": 0.0,
+      "value": 0.0241
+    },
+    "headline_six_draw_lo": {
+      "command": "grep -n -m1 '6-seed pooled\\*\\* \\| \\*\\*\\.4240\\*\\* \\| \\*\\*\\.4037\\*\\* \\| \\*\\*\\+\\.0203\\*\\* \\| \\*\\*\\[\\+(\\.0166),' research/E103_seed_stability.md",
+      "display": "+.0166",
+      "note": "lower end of the six-draw interval",
+      "recomputed": false,
+      "source": "research/E103_seed_stability.md",
+      "tolerance": 0.0,
+      "value": 0.0166
+    },
     "hmm_ci_high": {
       "command": "grep -n -m1 '\\+\\.0084 \\[\u2212\\.0025,(\\+\\.0180)\\]' work/FINDINGS.md",
       "display": "+.0180",
@@ -681,6 +780,33 @@
       "tolerance": 0.0,
       "value": -0.009
     },
+    "ingap_marginal": {
+      "command": "grep -n -m1 'in-gap marginal \\(headline, 6 primary\\)\\*\\* \\| \\*\\*(\\+\\.0017)' research/E112_ingap_marginal.md",
+      "display": "+.0017",
+      "note": "current-stack leave-one-out marginal, three seeds",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": 0.0017
+    },
+    "ingap_marginal_hi": {
+      "command": "grep -n -m1 '\\+\\.0004, \\+(\\.0030)\\]\\*\\*, 3/10 games negative' research/E112_ingap_marginal.md",
+      "display": "+.0030",
+      "note": "upper end of the game-cluster interval",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": 0.003
+    },
+    "ingap_marginal_lo": {
+      "command": "grep -n -m1 'in-gap marginal \\(headline, 6 primary\\)\\*\\* \\| \\*\\*\\+\\.0017 \\[\\+(\\.0004),' research/E112_ingap_marginal.md",
+      "display": "+.0004",
+      "note": "lower end of the game-cluster interval",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": 0.0004
+    },
     "ingap_new": {
       "command": "grep -n -m1 'in-gap decoder \\+\\.0816 \u2192 (\\+\\.006)' work/FINDINGS.md",
       "display": "+.006",
@@ -706,6 +832,60 @@
       "tolerance": 5e-05,
       "value": 0.0052
     },
+    "ingap_seed_hi": {
+      "command": "grep -n -m1 'max\u2212min: \u2212\\.0009 to (\\+\\.0031)' research/E112_ingap_marginal.md",
+      "display": "+.0031",
+      "note": "highest of the three frozen degrade draws",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": 0.0031
+    },
+    "ingap_seed_lo": {
+      "command": "grep -n -m1 'max\u2212min: (\u2212\\.0009) to \\+\\.0031' research/E112_ingap_marginal.md",
+      "display": "\u2212.0009",
+      "note": "lowest of the three frozen degrade draws",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": -0.0009
+    },
+    "ingap_two_level_hi": {
+      "command": "grep -n -m1 '3-draw \\[\u2212\\.0011,(\\+\\.0041)\\]' research/E118_seed_cluster.md",
+      "display": "+.0041",
+      "note": "two-level (game x draw) interval, frozen three seeds",
+      "recomputed": false,
+      "source": "research/E118_seed_cluster.md",
+      "tolerance": 0.0,
+      "value": 0.0041
+    },
+    "ingap_two_level_lo": {
+      "command": "grep -n -m1 '3-draw \\[(\u2212\\.0011),\\+\\.0041\\]' research/E118_seed_cluster.md",
+      "display": "\u2212.0011",
+      "note": "two-level (game x draw) interval, frozen three seeds",
+      "recomputed": false,
+      "source": "research/E118_seed_cluster.md",
+      "tolerance": 0.0,
+      "value": -0.0011
+    },
+    "inplay_rate": {
+      "command": "grep -n -m1 'playing clock =\\s+(55\\.28)%' research/E105_inplay_rate.md",
+      "display": "55.28%",
+      "note": "live share of the playing clock",
+      "recomputed": false,
+      "source": "research/E105_inplay_rate.md",
+      "tolerance": 0.0,
+      "value": 0.5528
+    },
+    "inplay_z": {
+      "command": "grep -n -m1 'live share of the playing clock\\*\\* \\| \\*\\*55\\.28%\\*\\* \\| \\*\\*58\\.21 \u00b1 6\\.38%\\*\\* \\| \\*\\*(\u22120\\.46)\\*\\*' research/E105_inplay_rate.md",
+      "display": "\u22120.46",
+      "note": "z on the rate axis; the raw-minute axis is confounded",
+      "recomputed": false,
+      "source": "research/E105_inplay_rate.md",
+      "tolerance": 0.0,
+      "value": -0.46
+    },
     "kick_recall_high": {
       "command": "grep -n -m1 'Recall 75 to (83%) on clean data' solution/docs/WHAT_WE_TRIED.md",
       "display": "83%",
@@ -721,6 +901,33 @@
       "source": "solution/docs/WHAT_WE_TRIED.md",
       "tolerance": 0.0,
       "value": 0.75
+    },
+    "level_clean": {
+      "command": "grep -n -m1 'At (0\\.8)x' research/E82_level_robustness.md",
+      "display": "0.8\u00d7",
+      "note": "cleaner severity perturbation",
+      "recomputed": false,
+      "source": "research/E82_level_robustness.md",
+      "tolerance": 0.0,
+      "value": 0.8
+    },
+    "level_margin_08": {
+      "command": "grep -n -m1 '\\| \\*\\*master \u2212 ship\\*\\* \\| \\*\\*(\\+\\.0195) \\[\\+(\\.0145),\\+(\\.0254)\\]\\*\\*' research/E82_level_robustness.md",
+      "display": "+.0195",
+      "note": "smallest adjacent margin, cleaner level, seed 0",
+      "recomputed": false,
+      "source": "research/E82_level_robustness.md",
+      "tolerance": 0.0,
+      "value": 0.0195
+    },
+    "level_messy": {
+      "command": "grep -n -m1 'at (1\\.2)x' research/E82_level_robustness.md",
+      "display": "1.2\u00d7",
+      "note": "messier severity perturbation",
+      "recomputed": false,
+      "source": "research/E82_level_robustness.md",
+      "tolerance": 0.0,
+      "value": 1.2
     },
     "master_dev": {
       "command": "grep -n -m1 'master \\*\\*(\\.4247)\\*\\*' research/B01_result.md",
@@ -878,6 +1085,15 @@
       "source": "solution/docs/WHAT_WE_TRIED.md",
       "tolerance": 0.0,
       "value": 0.115
+    },
+    "playing_clock_min": {
+      "command": "grep -n -m1 'live time is \\*\\*57\\.47 min of a (103\\.95)-min playing clock' research/E105_inplay_rate.md",
+      "display": "103.95 min",
+      "note": "graded frames minus the published 2H block, at 25 fps",
+      "recomputed": false,
+      "source": "research/E105_inplay_rate.md",
+      "tolerance": 0.0,
+      "value": 103.95
     },
     "postprocess_ci_high": {
       "command": "grep -n -m1 '\\[\\+\\.0063, \\+(\\.0138)\\]' research/E14_result.md",
@@ -1223,6 +1439,24 @@
       "tolerance": 5e-05,
       "value": 0.1003
     },
+    "sign_threshold": {
+      "command": "grep -n -m1 'Threshold: X = (\\.004)\\.' research/E118_seed_cluster.md",
+      "display": ".004",
+      "note": "a dev delta below this is quoted as level with zero",
+      "recomputed": false,
+      "source": "research/E118_seed_cluster.md",
+      "tolerance": 0.0,
+      "value": 0.004
+    },
+    "skillcorner_bar": {
+      "command": "grep -n -m1 'D-023'\\''s \u2248 (\\.02) bar' research/E104_dev1b_confirmation.md",
+      "display": "0.02",
+      "note": "minimum pooled delta for a held-out claim (D-023)",
+      "recomputed": false,
+      "source": "research/E104_dev1b_confirmation.md",
+      "tolerance": 0.0,
+      "value": 0.02
+    },
     "skillcorner_games": {
       "command": "grep -n '20 games' work/DECISIONS.md",
       "display": "20",
@@ -1230,6 +1464,60 @@
       "source": "work/DECISIONS.md D-022",
       "tolerance": 0.0,
       "value": 20
+    },
+    "skillcorner_master_hi": {
+      "command": "grep -n -m1 'master \u2212 Baseline\\+ \\+\\.0361\u2026(\\+\\.0567)' research/E104_dev1b_confirmation.md",
+      "display": "+.0567",
+      "note": "cross-rule range on 20 held-out SkillCorner games",
+      "recomputed": false,
+      "source": "research/E104_dev1b_confirmation.md",
+      "tolerance": 0.0,
+      "value": 0.0567
+    },
+    "skillcorner_master_lo": {
+      "command": "grep -n -m1 'master \u2212 Baseline\\+ \\+(\\.0361)\u2026\\+\\.0567' research/E104_dev1b_confirmation.md",
+      "display": "+.0361",
+      "note": "cross-rule range on 20 held-out SkillCorner games",
+      "recomputed": false,
+      "source": "research/E104_dev1b_confirmation.md",
+      "tolerance": 0.0,
+      "value": 0.0361
+    },
+    "skillcorner_master_ship_hi": {
+      "command": "grep -n -m1 'master \u2212 ship \\+\\.0092\u2026(\\+\\.0166)' research/E104_dev1b_confirmation.md",
+      "display": "+.0166",
+      "note": "cross-rule range on 20 held-out SkillCorner games",
+      "recomputed": false,
+      "source": "research/E104_dev1b_confirmation.md",
+      "tolerance": 0.0,
+      "value": 0.0166
+    },
+    "skillcorner_master_ship_lo": {
+      "command": "grep -n -m1 'master \u2212 ship \\+(\\.0092)\u2026\\+\\.0166' research/E104_dev1b_confirmation.md",
+      "display": "+.0092",
+      "note": "cross-rule range on 20 held-out SkillCorner games",
+      "recomputed": false,
+      "source": "research/E104_dev1b_confirmation.md",
+      "tolerance": 0.0,
+      "value": 0.0092
+    },
+    "skillcorner_ship_hi": {
+      "command": "grep -n -m1 'ship \u2212 Baseline\\+\\s+\\+\\.0215\u2026(\\+\\.0407)' research/E104_dev1b_confirmation.md",
+      "display": "+.0407",
+      "note": "cross-rule range on 20 held-out SkillCorner games",
+      "recomputed": false,
+      "source": "research/E104_dev1b_confirmation.md",
+      "tolerance": 0.0,
+      "value": 0.0407
+    },
+    "skillcorner_ship_lo": {
+      "command": "grep -n -m1 'ship \u2212 Baseline\\+\\s+\\+(\\.0215)\u2026' research/E104_dev1b_confirmation.md",
+      "display": "+.0215",
+      "note": "cross-rule range on 20 held-out SkillCorner games",
+      "recomputed": false,
+      "source": "research/E104_dev1b_confirmation.md",
+      "tolerance": 0.0,
+      "value": 0.0215
     },
     "sliver_gaps": {
       "command": "grep -n -m1 '~(\\d+) gaps of 2-4 s per game on dev' work/DECISIONS.md",

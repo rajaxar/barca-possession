@@ -693,6 +693,110 @@ def _digest(m):
         r"median nearest 2\.29 vs (2\.35)")
     m.e["geom_nearest_match"]["display"] = "2.35 m"
 
+    # -- reading copy: what changed since the freeze (P05). Every figure is parsed from the digest;
+    # the exact command is a one-line grep, and --check fails if the digest or the value moves.
+    one("ingap_marginal", "research/E112_ingap_marginal.md",
+        r"in-gap marginal \(headline, 6 primary\)\*\* \| \*\*(\+\.0017)",
+        display="+.0017", note="current-stack leave-one-out marginal, three seeds")
+    one("ingap_marginal_lo", "research/E112_ingap_marginal.md",
+        r"in-gap marginal \(headline, 6 primary\)\*\* \| \*\*\+\.0017 \[\+(\.0004),",
+        display="+.0004", note="lower end of the game-cluster interval")
+    one("ingap_marginal_hi", "research/E112_ingap_marginal.md",
+        r"\+\.0004, \+(\.0030)\]\*\*, 3/10 games negative",
+        display="+.0030", note="upper end of the game-cluster interval")
+    one("ingap_seed_lo", "research/E112_ingap_marginal.md",
+        r"max−min: (−\.0009) to \+\.0031", display="−.0009",
+        note="lowest of the three frozen degrade draws")
+    one("ingap_seed_hi", "research/E112_ingap_marginal.md",
+        r"max−min: −\.0009 to (\+\.0031)", display="+.0031",
+        note="highest of the three frozen degrade draws")
+    one("sign_threshold", "research/E118_seed_cluster.md",
+        r"Threshold: X = (\.004)\.", display=".004",
+        note="a dev delta below this is quoted as level with zero")
+    one("ingap_two_level_lo", "research/E118_seed_cluster.md",
+        r"3-draw \[(−\.0011),\+\.0041\]", display="−.0011",
+        note="two-level (game x draw) interval, frozen three seeds")
+    one("ingap_two_level_hi", "research/E118_seed_cluster.md",
+        r"3-draw \[−\.0011,(\+\.0041)\]", display="+.0041",
+        note="two-level (game x draw) interval, frozen three seeds")
+
+    one("headline_six_draw", "research/E103_seed_stability.md",
+        r"6-seed pooled\*\* \| \*\*\.4240\*\* \| \*\*\.4037\*\* \| \*\*(\+\.0203)\*\*",
+        display="+.0203", note="master - ship over six degradation draws")
+    one("headline_six_draw_lo", "research/E103_seed_stability.md",
+        r"6-seed pooled\*\* \| \*\*\.4240\*\* \| \*\*\.4037\*\* \| \*\*\+\.0203\*\* \| \*\*\[\+(\.0166),",
+        display="+.0166", note="lower end of the six-draw interval")
+    one("headline_six_draw_hi", "research/E103_seed_stability.md",
+        r"6-seed pooled\*\* \| \*\*\.4240\*\* \| \*\*\.4037\*\* \| \*\*\+\.0203\*\* \| \*\*\[\+\.0166, \+(\.0241)\]",
+        display="+.0241", note="upper end of the six-draw interval")
+    one("level_clean", "research/E82_level_robustness.md",
+        r"At (0\.8)x", display="0.8×", note="cleaner severity perturbation")
+    one("level_messy", "research/E82_level_robustness.md",
+        r"at (1\.2)x", display="1.2×", note="messier severity perturbation")
+    one("level_margin_08", "research/E82_level_robustness.md",
+        r"\| \*\*master − ship\*\* \| \*\*(\+\.0195) \[\+(\.0145),\+(\.0254)\]\*\*",
+        display="+.0195", note="smallest adjacent margin, cleaner level, seed 0")
+
+    one("skillcorner_master_lo", "research/E104_dev1b_confirmation.md",
+        r"master − Baseline\+ \+(\.0361)…\+\.0567", display="+.0361",
+        note="cross-rule range on 20 held-out SkillCorner games")
+    one("skillcorner_master_hi", "research/E104_dev1b_confirmation.md",
+        r"master − Baseline\+ \+\.0361…(\+\.0567)", display="+.0567",
+        note="cross-rule range on 20 held-out SkillCorner games")
+    one("skillcorner_ship_lo", "research/E104_dev1b_confirmation.md",
+        r"ship − Baseline\+\s+\+(\.0215)…", display="+.0215",
+        note="cross-rule range on 20 held-out SkillCorner games")
+    one("skillcorner_ship_hi", "research/E104_dev1b_confirmation.md",
+        r"ship − Baseline\+\s+\+\.0215…(\+\.0407)", display="+.0407",
+        note="cross-rule range on 20 held-out SkillCorner games")
+    one("skillcorner_master_ship_lo", "research/E104_dev1b_confirmation.md",
+        r"master − ship \+(\.0092)…\+\.0166", display="+.0092",
+        note="cross-rule range on 20 held-out SkillCorner games")
+    one("skillcorner_master_ship_hi", "research/E104_dev1b_confirmation.md",
+        r"master − ship \+\.0092…(\+\.0166)", display="+.0166",
+        note="cross-rule range on 20 held-out SkillCorner games")
+    one("skillcorner_bar", "research/E104_dev1b_confirmation.md",
+        r"D-023's ≈ (\.02) bar", display="0.02",
+        note="minimum pooled delta for a held-out claim (D-023)")
+
+    one("playing_clock_min", "research/E105_inplay_rate.md",
+        r"live time is \*\*57\.47 min of a (103\.95)-min playing clock",
+        display="103.95 min", note="graded frames minus the published 2H block, at 25 fps")
+    one("inplay_rate", "research/E105_inplay_rate.md",
+        r"playing clock =\s+(55\.28)%",
+        cast=lambda s: round(float(s) / 100.0, 4), display="55.28%",
+        note="live share of the playing clock")
+    one("external_inplay_rate", "research/E105_inplay_rate.md",
+        r"games average \*\*55\.56 ± 6\.37 live min and (58\.21) ± (6\.38)% share\*\*",
+        cast=lambda s: round(float(s) / 100.0, 4), display="58.21%",
+        note="mean live share of the ten external games")
+    one("external_inplay_sd", "research/E105_inplay_rate.md",
+        r"games average \*\*55\.56 ± 6\.37 live min and 58\.21 ± (6\.38)% share\*\*",
+        cast=lambda s: round(float(s) / 100.0, 4), display="6.38%",
+        note="between-game sd of the external live share")
+    one("inplay_z", "research/E105_inplay_rate.md",
+        r"live share of the playing clock\*\* \| \*\*55\.28%\*\* \| \*\*58\.21 ± 6\.38%\*\* \| \*\*(−0\.46)\*\*",
+        display="−0.46", note="z on the rate axis; the raw-minute axis is confounded")
+
+    one("attrib_floor", "research/E98_attribution.md",
+        r"\| \*\*floor\*\* \| \.4144 \| \*\*(\+\.0114)\*\*", display="+.0114",
+        note="leave-one-out marginal at master, seed 0")
+    one("attrib_subgap", "research/E98_attribution.md",
+        r"\| \*\*sub-gap\*\* \| \.4195 \| \*\*(\+\.0062)\*\*", display="+.0062",
+        note="leave-one-out marginal at master, seed 0")
+    one("attrib_grown", "research/E98_attribution.md",
+        r"\| \*\*grown D\*\* \| \.4213 \| \*\*(\+\.0045)\*\*", display="+.0045",
+        note="leave-one-out marginal at master, seed 0")
+    one("attrib_ingap_seed0", "research/E98_attribution.md",
+        r"\| \*\*in-gap\*\* \| \.4267 \| \*\*(−\.0009)\*\*", display="−.0009",
+        note="leave-one-out marginal at master, seed 0 (superseded by E112)")
+    one("attrib_sum", "research/E98_attribution.md",
+        r"grown D \+ sub-gap \+ floor\*\* \| \*\*(\+\.0221)\*\*", display="+.0221",
+        note="sum of the three post-ship marginals")
+    one("attrib_interaction", "research/E98_attribution.md",
+        r"three post-`ship` stages\)\*\* \| \*\*(−\.0013)\*\*", display="−.0013",
+        note="sum of three marginals minus the measured combined run")
+
 
 def build():
     m = Manifest()

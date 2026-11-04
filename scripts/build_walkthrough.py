@@ -910,6 +910,52 @@ def _prose(numbers):
                "the gate, splitting long D blocks, or restart-team-from-type: each has a decisive negative above."),
     ]
 
+    S["post"] = [
+        ("md", "## What changed since the freeze\n"
+               "\n"
+               "The freeze itself did not move: the submission is still the same file, and the headline "
+               "result is still {master_over_ship} against the pre-floor stack. What changed is how much of "
+               "it we are willing to claim. Post-freeze studies re-measured the small components, asked "
+               "whether the practice ranking survives a different draw or a different severity level, took "
+               "the two large orderings to twenty held-out SkillCorner games, and corrected the "
+               "ball-in-play denominator. None of them reopened the frozen file; all of them changed what "
+               "a reader should believe about the numbers in it."),
+        ("md", "The in-gap decoder is the clearest example. It was credited {ingap_over_gate} when it landed "
+               "on the gate-only stack; on the current stack its leave-one-out marginal is {ingap_marginal} "
+               "[{ingap_marginal_lo}, {ingap_marginal_hi}]. Those are different objects: most of the fall is "
+               "work that grown D and the short-spell floor now do first, not a reversal of the decoder. The "
+               "small number is also not sign-established. Any dev delta below {sign_threshold} is quoted as "
+               "*level with zero*, and this one is well below it: six degradation draws span {ingap_seed_lo} "
+               "to {ingap_seed_hi}, and the two-level interval that resamples draws as well as games is "
+               "[{ingap_two_level_lo}, {ingap_two_level_hi}], which includes zero. We keep the stage — "
+               "removing it is not justified either — and stop calling it a gain."),
+        ("md", "The big dev result is not a lucky draw or a lucky severity. Fresh degradation draws give "
+               "{headline_six_draw} [{headline_six_draw_lo}, {headline_six_draw_hi}] over six draws, with "
+               "the frozen three-seed number inside that interval. Scaling the practice data to "
+               "{level_clean} and {level_messy} of its fitted severity leaves the same order, and the "
+               "smallest adjacent margin is {level_margin_08} at the cleaner level. These are ranking "
+               "checks, not a second practice set, and no level was re-selected."),
+        ("md", "On twenty held-out SkillCorner games the two large orderings keep their sign under all four "
+               "derived-D rules: the frozen stack beats Baseline+ by {skillcorner_master_lo} to "
+               "{skillcorner_master_hi}, and the pre-floor stack beats it by {skillcorner_ship_lo} to "
+               "{skillcorner_ship_hi}. The third ordering, the frozen stack against the pre-floor stack, is "
+               "positive but only {skillcorner_master_ship_lo} to {skillcorner_master_ship_hi}, below the "
+               "{skillcorner_bar} bar we require for a held-out claim. The held-out set therefore confirms "
+               "the two large gains and cannot resolve the small one; the dev grid still decides it."),
+        ("md", "The ball-in-play check was a denominator error, now fixed. The frozen file has "
+               "{ball_in_play_min} of live play on a {playing_clock_min} playing clock, a live share of "
+               "{inplay_rate}; the ten external games average {external_inplay_rate} ± {external_inplay_sd}. "
+               "On the rate axis that is {inplay_z} standard deviations from the external mean — inside the "
+               "noise, not the shortfall a raw-minute comparison suggested. The raw-minute axis is confounded "
+               "by our unusually long clock and is no longer quoted."),
+        ("md", "The stage attribution is a substitution result, not a sum. Leave-one-out at one seed puts the "
+               "floor at {attrib_floor}, sub-gap at {attrib_subgap}, grown D at {attrib_grown} and in-gap at "
+               "{attrib_ingap_seed0}; the three post-freeze stages sum to about {attrib_sum} against the "
+               "measured {master_over_ship}, an interaction of {attrib_interaction}. Most of that interaction "
+               "is grown D handing the floor work it used to do. Read the table as what each stage is worth "
+               "given the other four, not as a budget that adds up."),
+    ]
+
     S["close"] = [
         ("md", "## Code, data and acknowledgements\n"
                "\n"
@@ -1211,7 +1257,7 @@ def build_notebook(numbers, profile):
         raise SystemExit("hand-typed digits in prose (use a numbers.json key):\n  " + "\n  ".join(bad))
 
     cells = []
-    for key in ("title", "1", "2", "3", "4", "5", "6", "7", "8", "close", "appendix"):
+    for key in ("title", "1", "2", "3", "4", "5", "6", "7", "8", "post", "close", "appendix"):
         for kind, payload in S[key]:
             if kind == "md":
                 cells.append(_cell(payload.format(**displays)))

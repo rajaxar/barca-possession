@@ -35,3 +35,5 @@ env/
 
 # regenerable public export (P04): build with scripts/build_walkthrough_html.py
 notebooks/possession_walkthrough_public.html
+# personal local reading copy with real-tracking figures: never commit, publish or upload (D-002/D-026)
+notebooks/possession_walkthrough_local.html

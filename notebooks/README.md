@@ -48,6 +48,24 @@ figure set, the absence of real-tracking images, and the absence of frame number
 match paths and work-card ids outside the appendix; it also rejects any `figs/public/*.png` that is
 not pixel-identical to a freshly rendered neutral placeholder.
 
+## Refresh the local reading copy
+
+The human's personal reading copy is the `local` profile rendered to one standalone HTML file, with
+every real-tracking clip inlined. It is **local-only**: do not commit it, publish it, upload it or
+send it anywhere (D-002/D-026, GUARDRAILS §1.3). It is gitignored.
+
+```bash
+# one command: reuse or rebuild the frozen CSV, refresh numbers, figures, local notebook and page
+make notebook-local
+```
+
+The target reuses `outputs/submission.csv` while `walkthrough_numbers.py --check` is green, so a
+parallel card editing an unrelated file cannot force a three-minute rebuild. It rebuilds only if the
+CSV is missing or the manifest reports drift, verifies the frozen sha, and exits non-zero on number
+drift. The output is `notebooks/possession_walkthrough_local.html`; a footer records the CSV sha256
+and the git commit the page was built from (never a wall-clock time, so rebuilds stay comparable).
+The public export remains `python scripts/build_walkthrough_html.py` with no arguments.
+
 
 ## What is local-only, and why
 
