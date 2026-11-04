@@ -9,7 +9,15 @@ Raw data lives outside the solution in ``../external`` (override with ``MTAH_EXT
 Parsed caches live in ``../external/cache`` (override with ``MTAH_EXTERNAL_CACHE_DIR``). Caches are
 invalidated by the source files' sizes and mtimes. The external-data warnings in
 ``research/S05_external_manifest.md`` still apply: this loader does not remove label leaks.
+
+PFF is opt-in: ``list_games()`` keeps returning the IDSSE, Metrica and SkillCorner games only, so
+adding PFF cannot change the shipped training set or the submission. Request it explicitly with
+``list_games("pff")`` or a ``pff:<id>`` ID. Only the two-period games are listed; the five 2022
+knockout games with extra time have four periods and do not fit ``Match``'s two halves. The loader
+reads raw ``balls`` only: ``ballsSmoothed`` is event-derived and is never touched (R10), nor are
+the per-frame ``game_event``/``possession_event`` fields.
 """
+import bz2
 import glob
 import json
 import os
@@ -54,6 +62,13 @@ _SK_FLIGHT_MAX = 3.0           # s: shorter null runs can be a pass in flight, n
 _SK_FLIGHT_BALL_V = 3.0        # m/s: a live flight has a moving ball ...
 _SK_FLIGHT_PLAYER_V = 1.5      # m/s: ... and moving players (a dead ball has walkers)
 
+# PFF WC22 (R10): 29.97 fps, no per-frame owner or alive flag. H/A/D is derived from the May 1,
+# 2025 event revision; ``balls`` is the only ball source (``ballsSmoothed`` interpolates from the
+# carrier and would leak the event owner). Constants are loader/parsing values, not model knobs.
+_PFF_FPS = 29.97
+_PFF_MAX_SLOTS = 20            # a WC22 squad is 26; at most 20 dress for one match
+_PFF_EVENT_REVISION = os.path.join("Event Data", "May 1, 2025")
+
 
 def _idsse_path(game_id, kind):
     paths = glob.glob(os.path.join(external_dir(), "idsse", kind + "*" + game_id + ".xml"))
@@ -85,7 +100,12 @@ def list_games(dataset=None):
             # git-lfs pointer stubs are ~130 bytes; real tracking files are ~90 MB
             if os.path.isfile(info) and os.path.isfile(track) and os.path.getsize(track) > 10 ** 6:
                 out.append("skillcorner:" + game_id)
-    if dataset not in (None, "idsse", "metrica", "skillcorner"):
+    if dataset == "pff":
+        for path in glob.glob(os.path.join(_pff_root(), "Metadata", "*.json")):
+            game_id = os.path.basename(path)[:-5]
+            if _pff_has_two_periods(game_id):
+                out.append("pff:" + game_id)
+    if dataset not in (None, "idsse", "metrica", "skillcorner", "pff"):
         raise ValueError("unknown dataset {!r}".format(dataset))
     return sorted(out)
 
@@ -530,6 +550,269 @@ def _load_skillcorner(game_id):
     return _cached("skillcorner_" + game_id, [track, info], build)
 
 
+def _pff_root():
+    return os.path.join(external_dir(), "pff", "wc2022")
+
+
+def _pff_paths(game_id):
+    root = _pff_root()
+    return (os.path.join(root, "Tracking Data", game_id + ".jsonl.bz2"),
+            os.path.join(root, _PFF_EVENT_REVISION, game_id + ".json"),
+            os.path.join(root, "Metadata", game_id + ".json"))
+
+
+def _pff_meta(game_id):
+    with open(_pff_paths(game_id)[2], encoding="utf8") as fh:
+        meta = json.load(fh)[0]
+    if abs(float(meta["fps"]) - _PFF_FPS) > 0.01:
+        raise ValueError("PFF fps is {!r}, expected {:.2f}".format(meta["fps"], _PFF_FPS))
+    return meta
+
+
+def _pff_has_two_periods(game_id):
+    """A PFF game this loader can represent: two periods, complete files, real tracking."""
+    track, events, meta = _pff_paths(game_id)
+    if not (os.path.isfile(track) and os.path.isfile(events) and os.path.isfile(meta)):
+        return False
+    if os.path.getsize(track) < 10 ** 6:
+        return False
+    try:
+        m = _pff_meta(game_id)
+    except (OSError, ValueError, KeyError, IndexError):
+        return False
+    return all(m.get(k) is not None for k in
+               ("startPeriod1", "endPeriod1", "startPeriod2", "endPeriod2"))
+
+
+def _pff_events(game_id):
+    """Collapsed game-event stream (one row per game event, in match order).
+
+    The JSON is long-format: a game event repeated once per attached possession event. Keying on
+    ``(gameEventId, gameEventType, startTime, endTime)`` keeps the rare case of a second game event
+    that reuses an ID (FOUL) while dropping the repeats.
+    """
+    with open(_pff_paths(game_id)[1], encoding="utf8") as fh:
+        rows = json.load(fh)
+    seen = {}
+    for row in rows:
+        game = row.get("gameEvents") or {}
+        key = (row.get("gameEventId"), game.get("gameEventType"), row.get("startTime"),
+               row.get("endTime"))
+        if key not in seen:
+            seen[key] = row
+    return sorted(seen.values(), key=lambda e: (float(e["startTime"]), e.get("gameEventId") or 0))
+
+
+def _pff_ref(times, half, meta, events):
+    """Derive H/A/D/X at source rate from OTB, OUT, kickoff and END game events.
+
+    There is no per-frame owner or alive flag in PFF (R10), so the labels are interval rules:
+
+    1. **Owner is the most recent OTB** ("player on the ball") event. A pass flight keeps the
+       passing team until the receiving team's first on-ball event; a hand-over therefore lands on
+       the new team's touch, the R09/IDSSE last-contact family. Frames before the first OTB take
+       the kickoff team from ``FIRSTKICKOFF`` / ``SECONDKICKOFF``. A few challenge/duel rows are
+       tagged OTB with no team or player; they carry no owner evidence and are skipped (the
+       previous owner persists).
+    2. **D runs from every OUT to the next OTB.** ``outType`` is ``T`` (touchline: throw-in, corner,
+       goal kick), ``W`` (whistle: foul, offside, injury) or ``H``/``A`` (goal). In this revision
+       the next OTB after an OUT is always the restart touch (throw-in, corner, goal kick, free
+       kick, kickoff, dropped ball), so D ends at the restart itself. This also covers goal
+       celebrations and VAR.
+    3. **X before the period's kickoff and after its END event.** Period 2's pre-kickoff frames are
+       trimmed by the tracking file itself; halftime is never concatenated.
+
+    Tested against the ball and players in ``research/S05_external_manifest.md`` (PFF section): 73.8-77.7% nearest-team
+    agreement on live frames (mean 75.2%; R09 IDSSE 76.5%, SkillCorner 74.1%), and 84.4-92.3% of H/A flips have a player
+    within 2.5 m of the ball at +-0.5 s (mean 87.7%).
+    """
+    out = np.full(len(times), "X", dtype="<U1")
+    home_id = str(meta["homeTeam"]["id"])
+    windows = [(1, float(meta["startPeriod1"]), float(meta["endPeriod1"])),
+               (2, float(meta["startPeriod2"]), float(meta["endPeriod2"]))]
+    for h, start, end in windows:
+        sel = np.flatnonzero(half == h)
+        if not len(sel):
+            continue
+        t = times[sel]
+        otb, outs = [], []
+        kick, end_t = None, end
+        for e in events:
+            game = e.get("gameEvents") or {}
+            kind = game.get("gameEventType")
+            when = float(e["startTime"])
+            if kind == "OTB":
+                if game.get("homeTeam") is not None:
+                    team = 0 if bool(game["homeTeam"]) else 1
+                elif game.get("teamId") is not None:
+                    team = 0 if str(game["teamId"]) == home_id else 1
+                else:
+                    # A handful of challenge/duel rows are tagged OTB with no team or player.
+                    # They carry no owner evidence; keeping the previous owner is the last-contact rule.
+                    continue
+                otb.append((when, team))
+            elif kind == "OUT":
+                outs.append(when)
+            elif (kind, h) == ("FIRSTKICKOFF", 1) or (kind, h) == ("SECONDKICKOFF", 2):
+                kick = (when, 0 if bool(game.get("homeTeam")) else 1)
+            elif kind == "END":
+                if (game.get("endType") == "FIRST" and h == 1) or \
+                        (game.get("endType") == "G" and h == 2):
+                    end_t = when
+        otb = sorted(x for x in otb if start - 1e-6 <= x[0] <= end_t + 1e-6)
+        if not otb:
+            raise ValueError("PFF half {} has no OTB event in {}".format(h, meta["id"]))
+        if kick is None:
+            raise ValueError("PFF half {} has no kickoff event in {}".format(h, meta["id"]))
+        ot = np.array([x[0] for x in otb], np.float64)
+        oteam = np.array([x[1] for x in otb], np.int8)
+        idx = np.searchsorted(ot, t, side="right") - 1
+        team = np.where(idx >= 0, oteam[np.clip(idx, 0, len(ot) - 1)], kick[1])
+        lab = np.where(team == 0, "H", "A").astype("<U1")
+        dead = np.zeros(len(t), bool)
+        for u in outs:
+            if not (start - 1e-6 <= u <= end_t + 1e-6):
+                continue
+            nxt = int(np.searchsorted(ot, u, side="right"))
+            dead |= (t >= u) & (t < (ot[nxt] if nxt < len(ot) else end_t))
+        lab[dead] = "D"
+        lab[(t < kick[0]) | (t >= end_t)] = "X"
+        out[sel] = lab
+    return out
+
+
+def _load_pff(game_id):
+    track, events_path, meta_path = _pff_paths(game_id)
+    meta = _pff_meta(game_id)
+    if not _pff_has_two_periods(game_id):
+        raise ValueError("PFF game {} is not a two-period game".format(game_id))
+    pitches = ((meta.get("stadium") or {}).get("pitches") or [])
+    pitch_l = float(pitches[0]["length"]) if pitches else 105.0
+    pitch_w = float(pitches[0]["width"]) if pitches else 68.0
+    events = _pff_events(game_id)
+
+    def build():
+        start1, end1 = float(meta["startPeriod1"]), float(meta["endPeriod1"])
+        start2, end2 = float(meta["startPeriod2"]), float(meta["endPeriod2"])
+        n_max = int(((end1 - start1) + (end2 - start2)) * _PFF_FPS) + 1000
+        cap = 2 * _PFF_MAX_SLOTS
+        P = np.full((n_max, cap, 2), np.nan, np.float32)
+        B = np.full((n_max, 2), np.nan, np.float32)
+        BZ = np.full(n_max, np.nan, np.float32)
+        BD = np.full(n_max, -1, np.int8)       # ball is_detected: 1 visible, 0 estimated, -1 absent
+        times = np.empty(n_max, np.float64)
+        half = np.empty(n_max, np.int8)
+        jersey = [{}, {}]                       # jersey string -> column within the team block
+        order = [[], []]
+        seen = set()
+        i = 0
+        with bz2.open(track, "rt", encoding="utf8") as fh:
+            for line in fh:
+                frame = json.loads(line)
+                p = frame["period"]
+                if p not in (1, 2):
+                    continue
+                key = (p, frame["frameNum"])
+                if key in seen:                 # the vendor file repeats some frames
+                    continue
+                seen.add(key)
+                if i >= n_max:
+                    raise ValueError("PFF tracking longer than the metadata duration: " + game_id)
+                times[i] = frame["videoTimeMs"] / 1000.0
+                half[i] = p
+                for side, name, block in ((0, "homePlayers", 0), (1, "awayPlayers", _PFF_MAX_SLOTS)):
+                    for player in frame.get(name) or []:
+                        jid = str(player["jerseyNum"])
+                        col = jersey[side].get(jid)
+                        if col is None:
+                            if len(order[side]) >= _PFF_MAX_SLOTS:
+                                raise ValueError("PFF game {} has >{} players on one team".format(
+                                    game_id, _PFF_MAX_SLOTS))
+                            col = jersey[side][jid] = len(order[side])
+                            order[side].append(jid)
+                        P[i, block + col] = (float(player["x"]), float(player["y"]))
+                balls = frame.get("balls") or []
+                if balls:
+                    ball = balls[0]
+                    if ball.get("x") is not None and ball.get("y") is not None:
+                        B[i] = (float(ball["x"]), float(ball["y"]))
+                        if ball.get("z") is not None:
+                            BZ[i] = float(ball["z"])
+                        BD[i] = 1 if ball.get("visibility") == "VISIBLE" else 0
+                i += 1
+        n = i
+        if n < 100:
+            raise ValueError("PFF tracking is empty: " + game_id)
+
+        # Trim the fixed-capacity blocks and sort each team by shirt number (deterministic slots).
+        nh, na = len(order[0]), len(order[1])
+        ranks = {}
+        for side, count in ((0, nh), (1, na)):
+            ranks[side] = sorted(
+                range(count),
+                key=lambda k: (not order[side][k].isdigit(),
+                               int(order[side][k]) if order[side][k].isdigit() else order[side][k]))
+        perm = [k for k in ranks[0]] + [_PFF_MAX_SLOTS + k for k in ranks[1]]
+        P = P[:n][:, perm]
+        T = np.r_[np.zeros(nh, np.int8), np.ones(na, np.int8)]
+        player_id = np.array(
+            ["home:" + order[0][k] for k in ranks[0]] + ["away:" + order[1][k] for k in ranks[1]])
+
+        offset = np.array([pitch_l / 2.0, pitch_w / 2.0], np.float32)
+        P += offset
+        B += offset
+        times, half = times[:n], half[:n]
+        B, BZ, BD = B[:n], BZ[:n], BD[:n]
+        ref_src = _pff_ref(times, half, meta, events)
+        # Frame numbers are contiguous after dedupe; the uniform source step is checked here so a
+        # hole can never be silently compressed by the resampler.
+        for h in (1, 2):
+            rows = np.flatnonzero(half == h)
+            if len(rows) < 2:
+                continue
+            step = np.diff(times[rows])
+            if np.max(np.abs(step - 1.0 / _PFF_FPS)) > 0.01:
+                raise ValueError("PFF timestamps are not uniform in half {} of {}".format(h, game_id))
+
+        parts = {k: [] for k in ("P", "B", "BZ", "ref", "BD", "half", "graded")}
+        runs = []
+        total = 0
+        ok_players = ~np.isnan(P[:, :, 0]).all(axis=1)
+        ok_ball = ~np.isnan(B[:, 0])
+        step = _PFF_FPS / FPS
+        for h, start, end in ((1, start1, end1), (2, start2, end2)):
+            rows = np.flatnonzero(half == h)
+            if not len(rows):
+                continue
+            a, b = int(rows[0]), int(rows[-1]) + 1
+            n_out = int((b - a - 1) * FPS / _PFF_FPS) + 1
+            Pi, valid = _interp_frames(P[a:b], ok_players[a:b], n_out, step)
+            Bi, _ = _interp_frames(B[a:b], ok_ball[a:b], n_out, step)
+            BZi, _ = _interp_frames(BZ[a:b], ok_ball[a:b], n_out, step)
+            near = np.minimum(np.rint(np.arange(n_out) * step).astype(np.int64), b - a - 1)
+            ref = ref_src[a:b][near]
+            graded = valid & (ref != "X")
+            parts["P"].append(Pi)
+            parts["B"].append(Bi)
+            parts["BZ"].append(BZi)
+            parts["ref"].append(ref)
+            parts["BD"].append(BD[a:b][near])
+            parts["half"].append(np.full(n_out, h, np.int8))
+            parts["graded"].append(graded)
+            runs.extend((total + s, total + e) for s, e in _mask_runs(graded))
+            total += n_out
+        cat = {k: np.concatenate(v) for k, v in parts.items()}
+        half25 = cat["half"]
+        V = _speed(cat["P"], half25)
+        BS = _speed(cat["B"][:, None, :], half25)[:, 0]  # xy-derived m/s, same definition as V
+        return dict(P=cat["P"], V=V, T=T, B=cat["B"], BS=BS, BZ=cat["BZ"], BD=cat["BD"],
+                    gk=_goalkeepers(cat["P"], T, half25, pitch_l), graded=cat["graded"],
+                    half=half25, ref=cat["ref"], runs=np.array(runs, np.int64),
+                    pitch=np.array([pitch_l, pitch_w]), player_id=player_id)
+
+    return _cached("pff_" + game_id, [track, events_path, meta_path], build)
+
+
 def load_game(game_id):
     """Load one canonical ID as ``evaluate.Game(name, match, ref, runs)``.
 
@@ -540,6 +823,8 @@ def load_game(game_id):
     outside ``runs``. SkillCorner's null ``possession.group`` is mapped to D by
     :func:`_skillcorner_ref`: live pass flights keep the last owner and line-case D onsets move to
     the ball crossing. 10 Hz is linearly resampled to 25 Hz and never interpolated across a gap.
+    PFF (opt-in ``pff:<id>``) is derived by :func:`_pff_ref`: owner = most recent on-ball OTB event,
+    D = every OUT to the next OTB, and 29.97 Hz is resampled to 25 Hz without bridging a ball gap.
     """
     try:
         dataset, source_id = game_id.split(":", 1)
@@ -553,6 +838,9 @@ def load_game(game_id):
         return _game_from_arrays(game_id, arrays, 105.0)
     if dataset == "skillcorner":
         arrays = _load_skillcorner(source_id)
+        return _game_from_arrays(game_id, arrays, float(arrays["pitch"][0]))
+    if dataset == "pff":
+        arrays = _load_pff(source_id)
         return _game_from_arrays(game_id, arrays, float(arrays["pitch"][0]))
     raise ValueError("unknown external game ID {!r}".format(game_id))
 
@@ -569,10 +857,18 @@ def pitch(game):
     if dataset == "skillcorner":
         meta = _skillcorner_info(source_id)
         return float(meta["pitch_length"]), float(meta["pitch_width"])
+    if dataset == "pff":
+        meta = _pff_meta(source_id)
+        pitches = ((meta.get("stadium") or {}).get("pitches") or [])
+        return (float(pitches[0]["length"]), float(pitches[0]["width"])) if pitches else (105.0, 68.0)
     raise ValueError("unknown external game ID {!r}".format(game_id))
 
 
 def load_games(game_ids=None):
-    """Generator over games; by default discovers every available IDSSE, Metrica and SkillCorner game."""
+    """Generator over games; by default discovers every available IDSSE, Metrica and SkillCorner game.
+
+    PFF is opt-in (``list_games("pff")``); including it in the default list would change the shipped
+    training set, so it is never added by ``game_ids=None``.
+    """
     for game_id in list_games() if game_ids is None else game_ids:
         yield load_game(game_id)
