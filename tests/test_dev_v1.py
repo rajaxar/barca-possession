@@ -5,16 +5,23 @@ S42 adds the D-interval diagnostic tests: fast synthetic checks of extraction/ma
 opt-in acceptance test (`MTAH_S42_ACCEPTANCE=1`) that reproduces E75's stage-ownership table and E07's
 stage-B interval F1 at seed 0. The acceptance test runs 80 dev cells (~15 min on 2 forks), so it is not
 part of the default suite; the numbers are recorded in research/S42_d_intervals.md.
+
+B36 adds the opt-in two-level (game x degradation draw) interval. The default suite has only synthetic
+checks (fast: no pipeline run); the acceptance test (`MTAH_B36_ACCEPTANCE=1`) reproduces E118's three
+contrasts from the cached E103/E112/E118 raws, including the frozen 3-seed in-gap interval [-.0011,+.0041],
+and is documented in research/B36_result.md.
 """
+import glob
 import inspect
 import os
+import pickle
 import tempfile
 import unittest
 from unittest import mock
 
 import numpy as np
 
-from possession import dev_v1, evaluate, external, make_submission
+from possession import config, dev_v1, evaluate, external, make_submission
 
 
 def _fake(name, tp, npd=100, ngt=100, seeds=dev_v1.SEEDS):
@@ -272,6 +279,220 @@ class DIntervalsAcceptance(unittest.TestCase):
             for kv, want in want_cells.items():
                 self.assertAlmostEqual(res["per_cell"][kv][.5]["f1"], want, delta=.0005,
                                        msg="%s cell %s" % (name, kv))
+
+
+def _seeded(name, tp_by_seed, npd=1000, ngt=1000, seeds=dev_v1.SEEDS):
+    """DevV1Result with the same counts in every cell/shift and a different tp vector per seed.
+
+    tp_by_seed: one (G,) array per seed. With npd = ngt = 1000, spellF1 is tp / 1000, so a
+    difference of 2 counts is a .002 delta -- the scale E118's .004 rule is about.
+    """
+    raw = {}
+    for g in range(len(dev_v1.GAMES)):
+        for si, s in enumerate(seeds):
+            for k, v in dev_v1.CELLS:
+                for sh in dev_v1.SHIFT_FRAMES:
+                    raw[(g, s, k, v, sh)] = (np.full(5, tp_by_seed[si][g]), npd, ngt)
+    return dev_v1.DevV1Result(name, raw, seeds=seeds)
+
+
+class TwoLevelSynthetic(unittest.TestCase):
+    """Fast checks of E118's two-level machinery: shared draws, .004 label, flips, callout, opt-in."""
+
+    def setUp(self):
+        self.base = np.linspace(300.0, 600.0, 10)
+
+    def test_same_draws_make_two_level_equal_game_cluster(self):
+        a = _seeded("a", [self.base + 70] * 3)
+        b = _seeded("b", [self.base] * 3)
+        tl = dev_v1.two_level_delta(a, b)
+        self.assertAlmostEqual(tl["delta"], .07, places=4)
+        self.assertEqual(tl["ci_two_level"], tl["ci"])
+        gc = np.mean([a._draws(k, v) - b._draws(k, v) for k, v in dev_v1.GROUPS["primary"]], axis=0)
+        np.testing.assert_allclose(tl["per_draw"], gc)
+        self.assertEqual(tl["sign_flips"], 0)
+        self.assertTrue(tl["label"].startswith("positive"), tl["label"])
+        self.assertFalse(tl["level_with_zero"])
+        self.assertIsNone(tl["callout"])
+
+    def test_delta_below_x_is_level_with_zero(self):
+        a = _seeded("a", [self.base + 2] * 3)       # .002
+        b = _seeded("b", [self.base] * 3)
+        tl = dev_v1.two_level_delta(a, b)
+        self.assertAlmostEqual(tl["delta"], .002, places=4)
+        self.assertTrue(tl["level_with_zero"])
+        self.assertTrue(tl["label"].startswith("level with zero"), tl["label"])
+        self.assertIn("span", tl["label"])
+        self.assertIn("%+.4f..%+.4f" % (min(tl["per_seed"]), max(tl["per_seed"])), tl["label"])
+
+    def test_sign_flips_and_seed_range(self):
+        a = _seeded("a", [self.base + 8, self.base - 8, self.base + 2])
+        b = _seeded("b", [self.base] * 3)
+        tl = dev_v1.two_level_delta(a, b)
+        self.assertAlmostEqual(tl["delta"], .0007, places=4)   # (.008-.008+.002)/3, rounded to 4 dp
+        self.assertEqual(tl["sign_flips"], 1)
+        self.assertAlmostEqual(tl["flip_rate"], 1 / 3, places=3)
+        self.assertEqual(tl["seed_range"], [-.008, .008])
+        self.assertTrue(tl["label"].startswith("level with zero"), tl["label"])
+        self.assertIn("1/3 flip", tl["label"])
+
+    def test_callout_when_only_the_two_level_ci_crosses_zero(self):
+        label, callout, flips = dev_v1.sign_label(
+            .006, [.018, -.006, .006], [.001, .011], [-.003, .015])
+        self.assertTrue(label.startswith("positive"), label)
+        self.assertEqual(flips, 1)
+        self.assertIn("two-level CI", callout)
+        self.assertIn("includes zero", callout)
+        # the reverse (two-level clean) and a level-with-zero delta carry no callout
+        _, clean, _ = dev_v1.sign_label(.006, [.002, .010], [-.001, .013], [.002, .010])
+        self.assertIsNone(clean)
+        level, _, _ = dev_v1.sign_label(.003, [.001, .005], [.001, .005], [.0005, .0055])
+        self.assertTrue(level.startswith("level with zero"))
+
+    def test_two_level_is_opt_in_and_returns_per_draw(self):
+        a = _seeded("a", [self.base + 70] * 3)
+        b = _seeded("b", [self.base] * 3)
+        plain = dev_v1.compare_dev_v1(a, b)
+        self.assertNotIn("two_level", plain)
+        self.assertNotIn("label", plain["headline"])
+        opt = dev_v1.compare_dev_v1(a, b, two_level=True)
+        self.assertIn("two_level", opt)
+        self.assertEqual(opt["two_level"]["per_draw"].shape, (dev_v1.N_DRAWS,))
+        self.assertEqual(opt["headline"]["label"], opt["two_level"]["label"])
+        self.assertEqual(opt["two_level"]["per_draw"].shape, (2000,))
+        self.assertIn("E118 two-level", str(opt))
+        self.assertNotIn("E118 two-level", str(plain))
+
+    def test_two_level_draws_are_frozen_and_shared(self):
+        a = _seeded("a", [self.base + 8, self.base - 8, self.base + 2])
+        b = _seeded("b", [self.base] * 3)
+        one = dev_v1.two_level_delta(a, b)
+        two = dev_v1.two_level_delta(a, b)
+        np.testing.assert_array_equal(one["per_draw"], two["per_draw"])
+        idx = dev_v1._two_level_indices()
+        self.assertEqual(idx["atoms"][6].shape, (dev_v1.N_DRAWS, 6))
+        self.assertTrue(idx["atoms"][6].max() < 6 and idx["atoms"][6].min() >= 0)
+
+    def test_two_level_needs_two_shared_draws(self):
+        a = _seeded("a", [self.base + 70], seeds=(0,))
+        b = _seeded("b", [self.base], seeds=(0,))
+        with self.assertRaises(ValueError):
+            dev_v1.two_level_delta(a, b)
+        a3 = _seeded("a", [self.base + 70] * 3)
+        b2 = _seeded("b", [self.base] * 2, seeds=(0, 1))
+        with self.assertRaises(ValueError):
+            dev_v1.two_level_delta(a3, b2)
+
+
+@unittest.skipUnless(os.environ.get("MTAH_B36_ACCEPTANCE") == "1",
+                     "set MTAH_B36_ACCEPTANCE=1 to run the E118 acceptance test (reads cached raws)")
+class TwoLevelAcceptance(unittest.TestCase):
+    """E118's three contrasts, reproduced through the new API from the E103/E112/E118 caches.
+
+    Six-draw objects: gate - Baseline+ +.0729 (0/6 flips), master - no_subgap +.0048 (0/6),
+    master - no_ingap +.0018 (1/6). Frozen 3-seed object: in-gap +.0017 with two-level
+    [-.0011,+.0041] crossing zero while the game-cluster CI [+.0004,+.0030] does not.
+    """
+
+    SIX = (0, 1, 2, 3, 4, 5)
+    THREE = (0, 1, 2)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = os.path.dirname(config.SOLUTION_DIR)
+        refs = sorted(glob.glob(os.path.join(config.SOLUTION_DIR, ".cache", "dev_v1",
+                                             "reference_*.pkl")))
+        if not refs:
+            raise unittest.SkipTest("frozen dev-v1 reference cache not on disk")
+        with open(refs[-1], "rb") as f:
+            frozen = pickle.load(f)
+        cls.res6, cls.res3 = {}, {}
+
+        def add(name, raw, seeds=cls.SIX):
+            cls.res6[name] = dev_v1.DevV1Result(name, raw, seeds=seeds)
+            cls.res3[name] = dev_v1.DevV1Result(
+                name, {k: v for k, v in raw.items() if k[1] in cls.THREE}, seeds=cls.THREE)
+
+        def part(path, key=None):
+            if not os.path.isfile(path):
+                raise unittest.SkipTest("B36 acceptance caches missing: %s" % path)
+            with open(path, "rb") as f:
+                d = pickle.load(f)
+            return d[key] if key else d
+
+        for pipe in ("gate", "baseline_plus"):
+            raw = dict(frozen[pipe].raw)
+            for s in (3, 4, 5):
+                for gi in range(len(dev_v1.GAMES)):
+                    raw.update(part(os.path.join(cls.root, "scratch/E118/out/ref_seed%d_game%d.pkl"
+                                                 % (s, gi)), pipe))
+            add(pipe, raw)
+
+        for pipe in ("master", "ship"):
+            raw = {}
+            for s in cls.SIX:
+                for gi in range(len(dev_v1.GAMES)):
+                    raw.update(part(os.path.join(cls.root, "scratch/E103/out/seed%d_game%d.pkl"
+                                                 % (s, gi)), pipe))
+            add(pipe, raw)
+
+        for cfg in ("no_ingap", "no_subgap"):
+            raw = {}
+            for s in cls.SIX:
+                for gi in range(len(dev_v1.GAMES)):
+                    raw.update(part(os.path.join(
+                        cls.root, "scratch/E112/out/part_%s_primary_s%d_g%02d.pkl"
+                        % (cfg, s, gi)))["raw"])
+            add(cfg, raw)
+
+    def test_gate_baseline_six_draws(self):
+        r = dev_v1.two_level_delta(self.res6["gate"], self.res6["baseline_plus"])
+        self.assertEqual(r["delta"], .0729)
+        self.assertEqual(r["ci"], [.0652, .0816])
+        self.assertEqual(r["ci_two_level"], [.0650, .0816])
+        self.assertEqual(r["sign_flips"], 0)
+        self.assertTrue(r["label"].startswith("positive"), r["label"])
+        self.assertIsNone(r["callout"])
+        self.assertEqual(len(r["per_draw"]), dev_v1.N_DRAWS)
+
+    def test_subgap_six_draws(self):
+        r = dev_v1.two_level_delta(self.res6["master"], self.res6["no_subgap"])
+        self.assertEqual(r["delta"], .0048)
+        self.assertEqual(r["ci"], [.0039, .006])
+        self.assertEqual(r["ci_two_level"], [.0036, .0062])
+        self.assertEqual(r["sign_flips"], 0)
+        self.assertTrue(r["label"].startswith("positive"), r["label"])
+        self.assertFalse(r["level_with_zero"])
+
+    def test_ingap_six_draws_is_level_with_zero(self):
+        r = dev_v1.two_level_delta(self.res6["master"], self.res6["no_ingap"])
+        self.assertEqual(r["delta"], .0018)
+        self.assertEqual(r["ci"], [.0007, .0029])
+        self.assertEqual(r["ci_two_level"], [.0001, .0034])
+        self.assertEqual(r["sign_flips"], 1)
+        self.assertTrue(r["level_with_zero"])
+        self.assertTrue(r["label"].startswith("level with zero"), r["label"])
+        self.assertIn("-0.0009..+0.0031", r["label"])
+        self.assertEqual(r["seed_range"], [-.0009, .0031])
+
+    def test_ingap_frozen_three_seeds_crosses_zero(self):
+        r = dev_v1.two_level_delta(self.res3["master"], self.res3["no_ingap"])
+        self.assertEqual(r["delta"], .0017)
+        self.assertEqual(r["ci"], [.0004, .003])
+        self.assertEqual(r["ci_two_level"], [-.0011, .0041])
+        self.assertEqual(r["sign_flips"], 1)
+        self.assertTrue(r["label"].startswith("level with zero"), r["label"])
+        self.assertTrue(r["two_level_crosses_zero"])
+        self.assertIn("two-level CI", r["callout"])
+        self.assertIn("includes zero", r["callout"])
+
+    def test_compare_dev_v1_attaches_the_same_block(self):
+        cmp = dev_v1.compare_dev_v1(self.res3["gate"], self.res3["baseline_plus"],
+                                    two_level=True)
+        self.assertEqual(cmp["headline"]["two_level"]["delta"], .0728)
+        self.assertEqual(cmp["headline"]["label"], cmp["two_level"]["label"])
+        self.assertIn("callout", cmp["headline"])
+        self.assertIn("E118 two-level", str(cmp))
 
 
 if __name__ == "__main__":

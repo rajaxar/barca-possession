@@ -22,6 +22,15 @@ calls the real :func:`possession.pipeline.build_labels`).
     print(res)
     cmp = dev_v1.compare_dev_v1(my_fn, "ship")          # either side: callable, builtin name or a saved result
     print(cmp)
+    cmp = dev_v1.compare_dev_v1(my_fn, "ship", two_level=True)   # + E118 two-level CI and labels
+    print(cmp)
+
+The E118 quoting rule (:func:`two_level_delta`, :func:`sign_label`) is opt-in because it reads a
+second uncertainty level the frozen grid does not have by default: a dev delta below ``SIGN_X``
+(.004) is **not sign-established** and must be quoted as "level with zero" with its per-draw range,
+and a two-level interval that includes zero is called out even when the game-cluster one does not.
+The two-level interval resamples the 10 games (the frozen shared ``_DRAWS``) and the degradation
+draws; it is a **quoting** rule, not a selection rule (D-009/D-022 still gate adoption).
 
 The D-interval view (:func:`d_interval_score`, :func:`compare_d_intervals`, S42) is a
 **diagnostic, never a selector** (D-022): spellF1 is the ranked objective. It answers "how many
@@ -53,6 +62,9 @@ SHIFT_FRAMES = (-12, 0, 12)          # reference shift, 0.5 s at 25 Hz (positive
 N_DRAWS = 2000
 DRAW_SEED = 0
 FPS = 25
+SIGN_X = 0.004                       # E118: a |delta| below this is not sign-established
+TWO_LEVEL_SEED = 2027                # E118's default_rng seed for the second level
+MAX_SEED_ATOMS = 6                   # E118 calibrated the two-level interval on 2..6 degradation draws
 
 GROUPS = {
     "primary": [(k, v) for k in KNOBS for v in PRIMARY_V],
@@ -345,15 +357,27 @@ def _ci(x):
 
 
 class DevV1Result:
-    """Per-cell spell counts of one pipeline. Picklable; compare two of them without re-running anything."""
+    """Per-cell spell counts of one pipeline. Picklable; compare two of them without re-running anything.
 
-    def __init__(self, name, raw):
+    ``seeds`` is the degradation-draw tuple this result holds and scores. It defaults to the frozen
+    :data:`SEEDS` (0, 1, 2). Pass the full tuple when the raw came from a wider run -- e.g. the
+    six-draw objects in :func:`two_level_delta`'s acceptance test (E118's seeds 0-5).
+    """
+
+    def __init__(self, name, raw, seeds=None):
         self.name, self.raw = name, raw
+        self.seeds = tuple(SEEDS if seeds is None else seeds)
+
+    def __setstate__(self, state):
+        """Old reference pickles predate ``seeds``; they were written under the frozen SEEDS."""
+        self.__dict__.update(state)
+        if "seeds" not in self.__dict__:
+            self.seeds = tuple(SEEDS)
 
     def _sk(self, knob, v, shift=0):
         """Per seed: (tp (G, n_iou), n_pred (G,), n_gt (G,))."""
         out = []
-        for s in SEEDS:
+        for s in self.seeds:
             rows = [self.raw[(g, s, knob, v, shift)] for g in range(len(GAMES))]
             out.append((np.array([r[0] for r in rows]), np.array([r[1] for r in rows]), np.array([r[2] for r in rows])))
         return out
@@ -407,17 +431,199 @@ def _delta(a, b, cells, shift=0):
             "per_game": [round(float(x), 4) for x in pg]}
 
 
+# -- two-level (game x degradation draw) interval and the E118 quoting rule -----------------------
+#
+# E118: the frozen game-cluster CI resamples the 10 games and treats the degradation draws as one
+# fixed replicate mean inside each draw, so a sign that lives in the draw is invisible to it. The
+# in-gap decoder's +.0018 has one negative draw out of six and a two-level CI that includes zero.
+# The rule is computed here rather than remembered: |delta| < SIGN_X is "level with zero", and a
+# two-level interval that includes zero is called out even when the game-cluster interval does not.
+# A quoting rule only -- D-009/D-010/D-022 still gate adoption on the game-cluster object.
+
+_TWO_LEVEL_INDICES = None
+
+
+def _two_level_indices():
+    """The frozen second-level draw indices (E118, ``default_rng(TWO_LEVEL_SEED)``).
+
+    ``atoms[S]`` (N_DRAWS, S): the S degradation draws of one replicate, drawn **jointly for the
+    whole dev set**. D-022 applies one ``degrade_game(seed)`` to all ten games, so a redraw moves
+    all ten games together: the seed is a common atom, not an independent pick per game.
+    ``per_game[S]`` (N_DRAWS, len(GAMES)): the card-literal sensitivity (a seed drawn inside each
+    sampled game), slightly wider at the small end and never used for a verdict.
+    ``picks[S]`` (N_DRAWS,): one drawn seed for the seed-only diagnostic.
+
+    Generated in E118's exact order (S = 2..6, atoms then picks then per_game) so the arrays are
+    the ones that produced research/E118_seed_cluster.md. Changing the seed or the order changes
+    the published intervals.
+    """
+    global _TWO_LEVEL_INDICES
+    if _TWO_LEVEL_INDICES is None:
+        rng = np.random.default_rng(TWO_LEVEL_SEED)
+        sizes = range(2, MAX_SEED_ATOMS + 1)
+        _TWO_LEVEL_INDICES = {
+            "atoms": {S: rng.integers(0, S, (N_DRAWS, S)) for S in sizes},
+            "picks": {S: rng.integers(0, S, N_DRAWS) for S in sizes},
+            "per_game": {S: rng.integers(0, S, (N_DRAWS, len(GAMES))) for S in sizes},
+        }
+    return _TWO_LEVEL_INDICES
+
+
+def _fmt_ci(ci):
+    return "[%+.4f,%+.4f]" % (ci[0], ci[1])
+
+
+def _excludes_zero(ci):
+    return bool(ci[0] > 0 or ci[1] < 0)
+
+
+def sign_label(delta, per_seed=None, ci_game=None, ci_two_level=None, threshold=SIGN_X):
+    """E118's quoting rule: label one dev delta and flag a two-level interval that crosses zero.
+
+    ``|delta| < threshold`` (E118's X = .004) -> ``"level with zero"``: the sign is not established,
+    whatever the game-cluster CI says; the label prints the actual per-draw span and flip count.
+    Otherwise the label carries the sign. When the game-cluster CI excludes zero but the two-level
+    CI does not, a ``callout`` says so even though the first interval looks clean.
+
+    Returns ``(label, callout, sign_flips)``; ``callout`` is None when there is nothing to flag.
+    """
+    per_seed = [] if per_seed is None else [float(x) for x in per_seed]
+    span, flips = "", None
+    if per_seed:
+        flips = int(sum(1 for x in per_seed if np.sign(x) != np.sign(delta)))
+        span = " (%d draw%s, %d/%d flip%s, span %+.4f..%+.4f)" % (
+            len(per_seed), "" if len(per_seed) == 1 else "s",
+            flips, len(per_seed), "" if flips == 1 else "s",
+            min(per_seed), max(per_seed))
+    if abs(delta) < threshold:
+        label = "level with zero" + span
+    else:
+        label = ("positive" if delta > 0 else "negative") + span
+    callout = None
+    if ci_game is not None and ci_two_level is not None:
+        if _excludes_zero(ci_game) and not _excludes_zero(ci_two_level):
+            callout = ("two-level CI %s includes zero although the game-cluster CI %s does not: "
+                       "the sign is not established (E118)" % (_fmt_ci(ci_two_level), _fmt_ci(ci_game)))
+    return label, callout, flips
+
+
+def two_level_delta(a, b, cells=None, shift=0, threshold=SIGN_X):
+    """A - B on dev-v1 with both intervals: game-cluster and two-level (games x degradation draws).
+
+    ``a``/``b`` are :class:`DevV1Result` (or builtin names resolved from the cached reference).
+    ``cells`` defaults to the 6 primary cells; ``shift`` is the E19 reference shift in frames.
+    Both results must hold the same 2..6 degradation draws (the frozen default is ``SEEDS`` = 3;
+    E118's six-draw object passes seeds 0-5). One seed is an **atom for the whole dev set**
+    (D-022 applies one degrader draw to all ten games); ``ci_two_level_per_game`` is the card-literal
+    per-game variant, reported as a sensitivity and never used for a verdict.
+
+    Returns a dict with the observed ``delta`` (same estimator as :func:`_delta`), ``ci`` (the
+    game-cluster interval), ``ci_two_level``, ``ci_two_level_per_game``, the per-draw deltas
+    (``per_draw``: the 2000 two-level replicates; ``per_draw_per_game``: its sensitivity;
+    ``per_seed``: the actual degradation draws), ``seed_range``, ``sign_flips``/``flip_rate``,
+    ``p_opposite``, the interval flags, and E118's ``label``/``callout`` (see :func:`sign_label`).
+    """
+    if isinstance(a, str) or isinstance(b, str):
+        refs = reference_results()
+        a = refs[a] if isinstance(a, str) else a
+        b = refs[b] if isinstance(b, str) else b
+    if tuple(a.seeds) != tuple(b.seeds):
+        raise ValueError("two-level needs the same degradation draws on both sides: %s vs %s"
+                         % (tuple(a.seeds), tuple(b.seeds)))
+    S = len(a.seeds)
+    if not 2 <= S <= MAX_SEED_ATOMS:
+        raise ValueError("two-level needs 2..%d degradation draws, got %d (%s); E118 calibrated the "
+                         "interval on 2..6" % (MAX_SEED_ATOMS, S, tuple(a.seeds)))
+    cells = tuple(GROUPS["primary"] if cells is None else cells)
+    idx = _two_level_indices()
+    dmat = np.empty((len(cells), S, N_DRAWS))      # per cell, per seed, per shared game draw
+    per_seed_cell = np.empty((len(cells), S))
+    for ci, (knob, v) in enumerate(cells):
+        sa, sb = a._sk(knob, v, shift), b._sk(knob, v, shift)
+        for si in range(S):
+            tpa, na, ga = sa[si]
+            tpb, nb, _ = sb[si]
+            ga_d = ga[_DRAWS].sum(1)
+            dmat[ci, si] = (evaluate._pooled_f1(tpa[_DRAWS].sum(1), na[_DRAWS].sum(1), ga_d)
+                            - evaluate._pooled_f1(tpb[_DRAWS].sum(1), nb[_DRAWS].sum(1), ga_d))
+            per_seed_cell[ci, si] = (evaluate._pooled_f1(tpa.sum(0), na.sum(), ga.sum())
+                                     - evaluate._pooled_f1(tpb.sum(0), nb.sum(), ga.sum()))
+    per_seed = per_seed_cell.mean(axis=0)
+    delta = float(per_seed.mean())
+    game_draws = dmat.mean(axis=1).mean(axis=0)
+    atoms = idx["atoms"][S]
+    rows = np.arange(N_DRAWS)
+    two_draws = dmat[:, atoms, rows[:, None]].mean(axis=(0, 2))
+
+    seed_pg = idx["per_game"][S]
+    pg = np.zeros(N_DRAWS)
+    for knob, v in cells:
+        sa, sb = a._sk(knob, v, shift), b._sk(knob, v, shift)
+        tpa = np.array([x[0] for x in sa])
+        na = np.array([x[1] for x in sa])
+        ga = sa[0][2]
+        tpb = np.array([x[0] for x in sb])
+        nb = np.array([x[1] for x in sb])
+        fa = evaluate._pooled_f1(tpa[seed_pg, _DRAWS].sum(1), na[seed_pg, _DRAWS].sum(1),
+                                 ga[_DRAWS].sum(1))
+        fb = evaluate._pooled_f1(tpb[seed_pg, _DRAWS].sum(1), nb[seed_pg, _DRAWS].sum(1),
+                                 ga[_DRAWS].sum(1))
+        pg += fa - fb
+    pg_draws = pg / len(cells)
+
+    ci_game, ci_two, ci_pg = _ci(game_draws), _ci(two_draws), _ci(pg_draws)
+    label, callout, flips = sign_label(delta, per_seed, ci_game, ci_two, threshold)
+    return {
+        "a": a.name, "b": b.name, "cells": cells, "seeds": tuple(a.seeds), "n_draws": N_DRAWS,
+        "threshold": threshold,
+        "delta": round(delta, 4),
+        "ci": ci_game,
+        "ci_two_level": ci_two,
+        "ci_two_level_per_game": ci_pg,
+        "per_draw": two_draws,
+        "per_draw_per_game": pg_draws,
+        "per_seed": [round(float(x), 5) for x in per_seed],
+        "seed_range": [round(float(per_seed.min()), 4), round(float(per_seed.max()), 4)],
+        "sign_flips": flips,
+        "flip_rate": round(flips / S, 3),
+        "p_opposite": round(float(np.mean(np.sign(two_draws) != np.sign(delta))), 3)
+        if delta != 0 else 1.0,
+        "excludes_0_game": _excludes_zero(ci_game),
+        "excludes_0_two_level": _excludes_zero(ci_two),
+        "two_level_crosses_zero": _excludes_zero(ci_game) and not _excludes_zero(ci_two),
+        "level_with_zero": abs(delta) < threshold,
+        "label": label,
+        "callout": callout,
+    }
+
+
 class DevV1Compare(dict):
     def __str__(self):
-        f = lambda r: "%+.4f %s neg%d" % (r["delta"], r["ci"], r["neg"])
-        lines = ["dev-v1 %s - %s  (game-cluster CI, %d shared draws, seed-mean inside each draw)" % (
-            self["a"], self["b"], N_DRAWS)]
+        def f(r):
+            s = "%+.4f %s neg%d" % (r["delta"], r["ci"], r["neg"])
+            return s + ("  " + r["label"] if "label" in r else "")
+        two = "two_level" in self
+        lines = ["dev-v1 %s - %s  (game-cluster CI%s, %d shared draws, seed-mean inside each draw)" % (
+            self["a"], self["b"], " + E118 two-level" if two else "", N_DRAWS)]
         lines.append("  headline (6 primary)  %s" % f(self["headline"]))
         for g in ("knob0", "knob1", "stress", "v0_reference"):
             lines.append("  %-20s  %s" % (g, f(self["groups"][g])))
         for s, r in self["shift"].items():
             lines.append("  headline ref shift %+.1fs  %s" % (s / FPS, f(r)))
         lines += ["  cell knob %g v %-4g  %s" % (k, v, f(r)) for (k, v), r in self["cells"].items()]
+        if two:
+            tl = self["two_level"]
+            rows = [("headline", self["headline"])]
+            rows += [(g, r) for g, r in self["groups"].items()]
+            rows += [("shift %+.1fs" % (s / FPS), r) for s, r in self["shift"].items()]
+            rows += [("knob %g v %g" % kv, r) for kv, r in self["cells"].items()]
+            for name, r in rows:
+                if r.get("callout"):
+                    lines.append("  callout %s: %s" % (name, r["callout"]))
+            lines.append("  E118 two-level: games x %d degradation draws, %d shared draws; X=%.3f, "
+                         "|delta| < X is 'level with zero' (never a direction); "
+                         "headline two-level %s" % (len(tl["seeds"]), N_DRAWS, tl["threshold"],
+                                                    _fmt_ci(tl["ci_two_level"])))
         t = self["tier1"]
         lines.append("  tier-1 mechanics: " + "  ".join("%s=%s" % kv for kv in t.items()))
         lines.append("  (dev-v1b H/A check, standing discounts and the on-our-match size are the caller's: D-022)")
@@ -432,10 +638,15 @@ def _as_result(x, refs):
     return None
 
 
-def compare_dev_v1(a, b, n_jobs=4, include_clean=False, expect_path=None):
+def compare_dev_v1(a, b, n_jobs=4, include_clean=False, expect_path=None, two_level=False):
     """A - B on dev-v1. Each side: callable, builtin name (``STAGES``, from the cached reference) or a DevV1Result.
     Returns a DevV1Compare (dict; print() it): headline, groups, v=0 reference, +-0.5 s shift rows, every cell, and
-    the mechanical D-022 tier-1 checks (the dev-v1b and standing-discount parts are not decided here)."""
+    the mechanical D-022 tier-1 checks (the dev-v1b and standing-discount parts are not decided here).
+
+    ``two_level=True`` adds the E118 object to every row: the two-level interval (games x degradation draws),
+    the per-draw/per-seed deltas, and the automatic ``label``/``callout`` (a |delta| below .004 is
+    "level with zero"; a two-level CI containing zero is called out even when the game-cluster CI does not).
+    Default False: the printed table and the returned keys are unchanged."""
     kw = dict(n_jobs=n_jobs, include_clean=include_clean, expect_path=expect_path)
     cache = {}
     refs = lambda: cache.setdefault("r", reference_results(**kw))
@@ -457,6 +668,21 @@ def compare_dev_v1(a, b, n_jobs=4, include_clean=False, expect_path=None):
         "wins_at_each_shift": all(r["excludes_0"] and r["delta"] > 0 for r in out["shift"].values()),
         "v0_ci_low_ge_-.001": out["groups"]["v0_reference"]["ci"][0] >= -0.001,
     }
+    if two_level:
+        def attach(row, cells, shift=0):
+            tl = two_level_delta(ra, rb, cells, shift)
+            row["two_level"] = tl
+            row["label"] = tl["label"]
+            row["callout"] = tl["callout"]
+
+        attach(out["headline"], GROUPS["primary"])
+        for g in ("knob0", "knob1", "stress", "v0_reference"):
+            attach(out["groups"][g], GROUPS[g])
+        for s in SHIFT_FRAMES:
+            attach(out["shift"][s], GROUPS["primary"], s)
+        for kv in CELLS:
+            attach(out["cells"][kv], [kv])
+        out["two_level"] = out["headline"]["two_level"]
     return out
 
 
