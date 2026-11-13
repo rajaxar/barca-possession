@@ -8,7 +8,7 @@ What it proves (each a named check, printed PASS/FAIL):
 
 * **standalone** -- no ``<script>``, ``<link>``, iframe/object/embed, web font or ``@import``; no
   ``http(s)://``, ``ftp://`` or ``file://``; every ``src``/``href`` is a ``data:`` URI.
-* **figure set** -- exactly the 18 public figures are embedded, byte-identical to the files the
+* **figure set** -- every public figure is embedded, byte-identical to the files the
   public profile names, and the embedded base64 decodes.
 * **no real tracking** -- no embedded image is byte-identical to a local-only rendered figure, and
   no decoded payload carries a local-only figure name. The only GIF is ``fig_spellf1``, the
@@ -123,7 +123,8 @@ def main(argv=None):
                       if not m.startswith("data:")]
     css_urls = [m for m in re.findall(r"url\(([^)]*)\)", doc) if not m.strip("'\"").startswith("data:")]
     check("no-network", not urls and not external_attrs and not css_urls,
-          "all 18 images inline, no URL, no non-data src/href/url()" if not (urls or external_attrs or css_urls)
+          "all %d images inline, no URL, no non-data src/href/url()" % len(srcs)
+          if not (urls or external_attrs or css_urls)
           else "urls=%s attrs=%s css=%s" % (urls[:3], external_attrs[:3], css_urls[:3]))
 
     # ---------------------------------------------------------------- images decode and match

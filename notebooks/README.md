@@ -2,7 +2,7 @@
 
 `possession_walkthrough.ipynb` is the prose-led, traceable version of the work: eight sections (problem,
 score, practice set, pipeline, clues, negatives, results, limits), a centerpiece animation of the scoring
-rule, and an appendix that goes from a headline number to its source and command. It has **no code cells**. Everything executable is in `../scripts/`.
+rule, and an appendix that goes from a headline number to its source and command. It is written for a reader who knows football and no machine learning: a start-here box, a concept section on the in-gap decoder, eight sections, a sorted glossary and the appendix. Figure text is raised to a minimum size by `_legible()` in the builder. It has **no code cells**. Everything executable is in `../scripts/`.
 
 ## Build it
 

@@ -137,12 +137,13 @@ possession count grows by more than 36%.
 
 *Why:* the ball-free shape model names the team with the ball 87% of the time on unseen matches, and
 the decoder added +.005 [.004, .007] on the practice set when it landed, positive in 10 of 10 matches.
-**On the final stack its measured contribution is smaller than the gate-only +.005: removing it changes
-the score by −.0017 [−.0030, −.0004], negative in 3 of 10 matches** (E112). Two-thirds of the drop from
-+.0052 is the stages added after it — grown D and the short-spell floor — and the seed-to-seed split is
-−.0009 / +.0031 / +.0031, a swing larger than the effect itself. Mechanically the decoder now adds about
+**On the final stack its measured contribution is level with zero: +.0017 [+.0004, +.0030]
+between games, but [−.0011, +.0041] once degrader-draw variance is included, negative in 3 of 10
+matches and in one of six draws** (E112, E118). That is below the .004 bar for quoting a direction. Most of
+the drop from the gate-only +.0052 comes from the stages added after it, grown D and the short-spell floor,
+and the seed-to-seed split is −.0009 / +.0031 / +.0031, a swing larger than the effect itself. Mechanically the decoder now adds about
 2,300 spells of 1.5 s or more and removes about 900 sub-1.5 s ones, so flicker falls from 6.3% to 4.2%
-with the D share unchanged. It stays because the marginal is positive on six of six primary cells and the
+with the D share unchanged. It stays because the marginal is not negative on any of the six primary cells and the
 ball-free evidence is what makes hidden-ball stretches legible at all. On our match only 3.9% of graded frames are eligible, so
 its reach was always small; with the gate in front it rewrites 1.2% of graded frames.
 

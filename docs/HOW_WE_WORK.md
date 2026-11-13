@@ -2,7 +2,7 @@
 
 ## Why we practice on other matches
 
-We have the true answers for 5 public minutes of our match, and the rules forbid training or tuning on them. Even if they were allowed, 5 minutes hold 17 real possessions. The organizers show that tuning a one-setting baseline on this sample picks the wrong setting. So every choice is made on other public matches that have answers.
+We have the true answers for 5 public minutes of our match, and the rules forbid training or tuning on them. Even if they were allowed, 5 minutes hold only 17 real possessions. The organizers show that tuning a one-setting baseline on this sample picks the wrong setting. So every choice is made on other public matches that have answers.
 
 The main practice set is frozen at 10 matches: 7 from the German league (DFL) and 3 from Metrica. Anything trained is trained with one match held out at a time. A second set of 20 SkillCorner matches is used only for who-has-the-ball questions, never pooled with the 10. Its dead-ball labels are our own derived rule, so it never sets a dead-ball threshold, a stoppage length or a dead share. A dead-ball conclusion must hold on the 10 alone. A who-has-the-ball conclusion must not reverse on the 20.
 
@@ -27,8 +27,8 @@ The practice set is about .06 easier than the real match. The organizers' 2-seco
 
 Every candidate is scored on the frozen practice set with whole-match resampling. A candidate ships by default only if all of these hold:
 
-- its range of gain is above zero over the six main cells;
-- it is not negative in any main cell or in the stress cells;
+- its range of gain is above zero over the six main settings (three visible-ball shares by two stillness settings);
+- it is not negative in any main or stress setting;
 - it survives shifting the answers by half a second;
 - the SkillCorner set does not contradict it.
 
@@ -42,9 +42,9 @@ The score can be run against them, and we do so once per version, as a report. T
 
 ## Why every important result is re-checked
 
-The frozen dev-v1 headline is reproducible with one command: `make headline` runs the ten practice games, three seeds and the twelve-cell grid in a single pass, prints the reference rows beside the measured ones, and refuses to call a near miss a match. A smoke run (`make headline SEEDS=0 CELLS=1:0.05`) is labelled as such and makes no D-029 claim.
+The practice-set comparison quoted in the README is reproducible with one command: `make headline` runs the ten practice matches, three seeds and all twelve settings in one pass, prints the expected rows beside the measured ones, and treats a near miss as a failure. A quick run (`make headline SEEDS=0 CELLS=1:0.05`) is labelled as a smoke test and claims nothing.
 
-Any result that changes a decision goes to a reviewer who did not run it. The reviewer reruns it with their own script, looks for leaks and checks that the numbers match. Several first results changed at this step: a figure was withdrawn for using an unbalanced window, a unit bug showed up in one source, and the first practice-match setting was found to be outside the range our data allows. A re-implementation of the grown-stoppage code corrected one of our figures. We say so in [WHAT_WE_TRIED.md](WHAT_WE_TRIED.md).
+Any result that changes a decision goes to a reviewer who did not run it. The reviewer reruns it with their own script, looks for leaks and checks that the numbers match. Several first results changed at this step: a figure was withdrawn for using an unbalanced window, a unit bug showed up in one source, the first visible-ball setting was found to be outside the range our data allows, and a re-implementation of the grown-stoppage code corrected one figure. All are listed in [WHAT_WE_TRIED.md](WHAT_WE_TRIED.md).
 
 When we compare two methods, we resample whole matches rather than single possessions. Possession-level resampling called 30% of identical methods different. Whole-match resampling called 5%, which is the right rate.
 
@@ -53,6 +53,6 @@ When we compare two methods, we resample whole matches rather than single posses
 - No hand labels on this match, no hand-corrected tracking, and no rule tied to a specific frame. Structure the organizers publish (half boundaries, the two kickoffs) is used as a constant with its source cited. Everything else about when things happen is found by code.
 - No outside data about this match: no event feeds, no corrected tracking, no possession statistics. Data about other matches is fine, and its source is recorded.
 - No match data sent to outside services or published. Tracking, frames, audio and video stay on local machines, and so does anything drawn from them. Public audio models run locally.
-- The video is watched only to understand football — the Laws, what a stoppage looks like, what a keeper does. Nothing watched becomes a label, a threshold, a parameter or a score, and no claim in this document rests on it: every quantity here is measured automatically on our own data or against external matches. Where watching raised a question, the answer was re-derived with an automatic instrument (R13, E38, E75, E84, E105).
+- The video is watched only to understand football: the Laws, what a stoppage looks like, what a keeper does. Nothing watched becomes a label, a threshold, a parameter or a score, and no claim here rests on it. Every quantity is measured automatically on our own data or on external matches. Where watching raised a question, the answer was re-derived by code.
 - One command rebuilds the final file byte for byte, with fixed random seeds and no manual steps. It does so across thread counts, a clean hash-locked install and a Linux container. A test fails on public-answer reads, frame-number constants, network imports and committed data.
 - Everything shipped is inspectable: public models and datasets only.

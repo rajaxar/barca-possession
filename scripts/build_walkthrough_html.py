@@ -54,7 +54,7 @@ CSS = """
 html { background: #f7f8f7; }
 body {
   margin: 0; color: var(--ink); background: #f7f8f7;
-  font: 17px/1.66 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: 18px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 main { max-width: 840px; margin: 0 auto; padding: 56px 30px 100px; background: #fff; }
@@ -63,7 +63,8 @@ h2 {
   font-size: 1.48rem; line-height: 1.25; margin: 2.4em 0 0.7em; padding-top: 0.7em;
   border-top: 1px solid var(--rule);
 }
-p { margin: 0 0 1.05em; }
+p { margin: 0 0 1.15em; max-width: 70ch; text-align: left; }
+a { text-decoration: underline; text-underline-offset: 2px; }
 strong { font-weight: 650; }
 em { font-style: italic; }
 code {
@@ -72,27 +73,31 @@ code {
 }
 figure { margin: 0 0 1.7em; }
 figure img { display: block; width: 100%; height: auto; margin: 0 auto; border-radius: 2px; }
-figcaption { font-size: 0.86rem; line-height: 1.5; color: var(--muted); margin-top: 0.45em; }
+figcaption { font-size: 15.5px; line-height: 1.5; color: var(--muted); margin-top: 0.5em; max-width: 70ch; }
 .figpair { display: flex; gap: 14px; flex-wrap: wrap; }
 .figpair > div { flex: 1 1 300px; min-width: 0; padding: 0; }
 .figpair figure { margin-bottom: 1.2em; }
 table {
   width: 100%; border-collapse: collapse; margin: 1.3em 0 1.7em;
-  font-size: 0.84rem; line-height: 1.45;
+  font-size: 15.5px; line-height: 1.5; font-variant-numeric: tabular-nums;
 }
-th, td { text-align: left; vertical-align: top; padding: 0.48em 0.55em; border-bottom: 1px solid var(--rule); }
+th, td { text-align: left; vertical-align: top; padding: 0.55em 0.6em; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
 th { background: var(--panel); font-weight: 650; }
 tbody tr:nth-child(even) { background: #fafbfa; }
 .appendix { margin-top: 1em; }
-.appendix table { font-size: 0.78rem; }
+.appendix table { font-size: 14px; }
 .appendix code { background: none; padding: 0; }
+@media (max-width: 900px) {
+  .figpair > div { flex: 1 1 100%; }
+}
 @media (max-width: 640px) {
-  body { font-size: 16px; }
+  body { font-size: 17px; }
   main { padding: 32px 16px 64px; }
   h1 { font-size: 1.75rem; }
   h2 { font-size: 1.3rem; }
-  table { font-size: 0.78rem; }
-  th, td { padding: 0.4em 0.4em; }
+  table { font-size: 14px; }
+  th, td { padding: 0.45em 0.4em; }
+  figcaption { font-size: 15px; }
 }
 @media print {
   html, body { background: #fff; }

@@ -154,6 +154,11 @@ def _dev_ref(m):
     m.add_range("ingap_over_gate", round(d, 4), round(lo, 4), round(hi, 4),
                 source="solution/possession/dev_v1.py (compare_dev_v1)", command=cmd, recomputed=True,
                 tolerance=5e-5, note="games with a negative delta: %d/10" % neg)
+    for suffix, v in (("lo", lo), ("hi", hi)):
+        m.add("ingap_over_gate_" + suffix, round(v, 4),
+              source="solution/possession/dev_v1.py (compare_dev_v1)", command=cmd,
+              recomputed=True, tolerance=5e-5, display=_delta(v),
+              note="gate-only in-gap marginal, game-cluster interval")
     d, lo, hi, neg = cmp("ship", "smooth50")
     m.add_range("ship_over_smooth50", round(d, 4), round(lo, 4), round(hi, 4),
                 source="solution/possession/dev_v1.py (compare_dev_v1)", command=cmd, recomputed=True,
@@ -720,6 +725,29 @@ def _digest(m):
         r"3-draw \[−\.0011,(\+\.0041)\]", display="+.0041",
         note="two-level (game x draw) interval, frozen three seeds")
 
+    # -- the concept section: the decoder's mechanism and its honest size
+    one("ingap_added_spells", "research/E112_ingap_marginal.md",
+        r"\*\*(\+2,289) \(\+4\.1%\)\*\*", cast=lambda s: int(s.replace("+", "").replace(",", "")),
+        display="2,289", note="post-floor spells of 1.5 s or more added, over 180 cell-games")
+    one("ingap_removed_short", "research/E112_ingap_marginal.md",
+        r"\*\*−(\d+)\*\* \|", cast=lambda s: -int(s), display="921",
+        note="sub-1.5 s spells removed before the floor; stored negative")
+    one("ingap_flicker_before", "research/E112_ingap_marginal.md",
+        r"4,066 \(\*\*(6\.25)%\*\*\)", cast=lambda s: round(float(s) / 100.0, 4),
+        display="6.25%", note="share of pre-floor spells under 1 s without the decoder")
+    one("ingap_flicker_after", "research/E112_ingap_marginal.md",
+        r"2,778 \(\*\*(4\.18)%\*\*\)", cast=lambda s: round(float(s) / 100.0, 4),
+        display="4.18%", note="share of pre-floor spells under 1 s with the decoder")
+    one("ingap_neg_games", "research/E112_ingap_marginal.md",
+        r"\*\*\+\.0017 \[\+(?:\.0004),\+(?:\.0030)\], (3/10) games negative",
+        cast=str, display="3/10", note="games where removing the decoder helps")
+    one("ingap_cells_pos", "research/E112_ingap_marginal.md",
+        r"3/10 games negative,\s*(6/6) primary cells positive",
+        cast=str, display="6/6", note="primary cells where the marginal is non-negative")
+    one("ingap_drop_two_thirds", "research/E112_ingap_marginal.md",
+        r"(Two thirds) of the \.0035 loss is", cast=lambda s: "two-thirds",
+        display="two-thirds", note="share of the drop from +.0052 taken by grown D and the floor")
+
     one("headline_six_draw", "research/E103_seed_stability.md",
         r"6-seed pooled\*\* \| \*\*\.4240\*\* \| \*\*\.4037\*\* \| \*\*(\+\.0203)\*\*",
         display="+.0203", note="master - ship over six degradation draws")
@@ -778,15 +806,37 @@ def _digest(m):
         r"live share of the playing clock\*\* \| \*\*55\.28%\*\* \| \*\*58\.21 ± 6\.38%\*\* \| \*\*(−0\.46)\*\*",
         display="−0.46", note="z on the rate axis; the raw-minute axis is confounded")
 
+    one("gate_six_draw", "research/E118_seed_cluster.md",
+        r"gate − Baseline\+.*?\*\*(\+\.0729)\*\*", display="+.0729",
+        note="gate - Baseline+ over six degradation draws; the frozen three-seed reference "
+             "difference is .0728")
     one("attrib_floor", "research/E98_attribution.md",
         r"\| \*\*floor\*\* \| \.4144 \| \*\*(\+\.0114)\*\*", display="+.0114",
         note="leave-one-out marginal at master, seed 0")
+    one("attrib_floor_lo", "research/E98_attribution.md",
+        r"\| \*\*floor\*\* \| \.4144 \| \*\*\+\.0114\*\* \| \[\+(\.0079),",
+        display="+.0079", note="game-cluster interval at master, seed 0")
+    one("attrib_floor_hi", "research/E98_attribution.md",
+        r"\| \*\*floor\*\* \| \.4144 \| \*\*\+\.0114\*\* \| \[\+\.0079, \+(\.0149)\]",
+        display="+.0149", note="game-cluster interval at master, seed 0")
     one("attrib_subgap", "research/E98_attribution.md",
         r"\| \*\*sub-gap\*\* \| \.4195 \| \*\*(\+\.0062)\*\*", display="+.0062",
         note="leave-one-out marginal at master, seed 0")
+    one("attrib_subgap_lo", "research/E98_attribution.md",
+        r"\| \*\*sub-gap\*\* \| \.4195 \| \*\*\+\.0062\*\* \| \[\+(\.0050),",
+        display="+.0050", note="game-cluster interval at master, seed 0")
+    one("attrib_subgap_hi", "research/E98_attribution.md",
+        r"\| \*\*sub-gap\*\* \| \.4195 \| \*\*\+\.0062\*\* \| \[\+\.0050, \+(\.0074)\]",
+        display="+.0074", note="game-cluster interval at master, seed 0")
     one("attrib_grown", "research/E98_attribution.md",
         r"\| \*\*grown D\*\* \| \.4213 \| \*\*(\+\.0045)\*\*", display="+.0045",
         note="leave-one-out marginal at master, seed 0")
+    one("attrib_grown_lo", "research/E98_attribution.md",
+        r"\| \*\*grown D\*\* \| \.4213 \| \*\*\+\.0045\*\* \| \[\+(\.0029),",
+        display="+.0029", note="game-cluster interval at master, seed 0")
+    one("attrib_grown_hi", "research/E98_attribution.md",
+        r"\| \*\*grown D\*\* \| \.4213 \| \*\*\+\.0045\*\* \| \[\+\.0029, \+(\.0060)\]",
+        display="+.0060", note="game-cluster interval at master, seed 0")
     one("attrib_ingap_seed0", "research/E98_attribution.md",
         r"\| \*\*in-gap\*\* \| \.4267 \| \*\*(−\.0009)\*\*", display="−.0009",
         note="leave-one-out marginal at master, seed 0 (superseded by E112)")
@@ -797,6 +847,88 @@ def _digest(m):
         r"three post-`ship` stages\)\*\* \| \*\*(−\.0013)\*\*", display="−.0013",
         note="sum of three marginals minus the measured combined run")
 
+    # -- the section at the front: the short-spell floor's price
+    one("floor_real_short", "research/E99_floor_recheck.md",
+        r"\*\*(84) of 464\*\* current sub-1\.5 s spells", cast=int, display="84",
+        note="real sub-1.5 s possessions deleted by the floor at the easiest IoU")
+    one("floor_short_total", "research/E99_floor_recheck.md",
+        r"\*\*84 of (464)\*\* current sub-1\.5 s spells", cast=int, display="464",
+        note="sub-1.5 s predicted spells in the 10 practice games")
+    one("floor_false_short", "research/E99_floor_recheck.md",
+        r"~(\d+) false positives", cast=int, display="380",
+        note="false positives removed by the same rule")
+
+
+def _explain_demo(m):
+    """The front section's one synthetic timeline, three answers, scored by the organizer metric.
+
+    One match: an 8 s H spell, a 1 s A spell, a 4 s H spell.  (a) exact; (b) the first spell cut
+    by a one-frame D gap near its middle; (c) the short A spell missed (predicted D).  The figure
+    draws only these values, and ``--check`` rescoring them fails if the metric moves.
+    """
+    import numpy as np
+    from possession import evaluate
+
+    n = 700
+    ref = np.full(n, "D", dtype="<U1")
+    ref[100:300] = "H"      # 8 s
+    ref[340:365] = "A"      # 1 s
+    ref[380:480] = "H"      # 4 s
+
+    def pred(parts):
+        p = np.full(n, "D", dtype="<U1")
+        for a, b, lab in parts:
+            p[a:b] = lab
+        return p
+
+    clean = [(100, 300, "H"), (340, 365, "A"), (380, 480, "H")]
+    flicker = [(100, 199, "H"), (199, 200, "D"), (200, 300, "H"),
+               (340, 365, "A"), (380, 480, "H")]
+    missed = [(100, 300, "H"), (380, 480, "H")]
+
+    cmd = "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show "
+    for key, parts, note in (
+            ("explain_clean", clean, "exact answer to the synthetic timeline"),
+            ("explain_flicker", flicker, "one frame of D near the middle of the 8 s spell"),
+            ("explain_missed", missed, "the 1 s spell predicted D; nothing else wrong")):
+        score = float(evaluate.score(pred(parts), ref)["spell_f1_mean"])
+        m.add(key, round(score, 4), source="organizer metric, synthetic labels",
+              command=cmd + key, recomputed=True, tolerance=1e-9, display=_score2(score),
+              note=note)
+
+    # the per-threshold profile of the flicker case, so the figure has no hand-typed numbers
+    codes = evaluate.to_codes
+    per = evaluate.pm.spell_scores(codes(ref), codes(pred(flicker)), [(0, n)])["per_iou"]
+    for th, key in ((0.3, "03"), (0.4, "04"), (0.5, "05"), (0.6, "06"), (0.7, "07")):
+        f1 = float(per[th]["f1"])
+        m.add("explain_flicker_f1_" + key, round(f1, 4),
+              source="organizer metric, synthetic labels",
+              command=cmd + "explain_flicker_f1_" + key, recomputed=True, tolerance=1e-9,
+              display=_score(f1), note="flicker case, F1 at IoU %.1f" % th)
+
+    # the two half-spells' IoU against the 8 s host (frames 100-300)
+    host = 200.0
+    for key, half, note in (("explain_flicker_iou_lo", 99.0, "the 99-frame half of the host"),
+                            ("explain_flicker_iou_hi", 100.0, "the 100-frame half of the host")):
+        m.add(key, round(half / host, 4), source="synthetic labels (one true 200-frame spell)",
+              command=cmd + key, recomputed=True, tolerance=1e-9,
+              display="%.3f" % (half / host),
+              note=note)
+    m.add("iou_mid", 0.5, source="the organizer's spellF1 band (SPELL_IOUS)",
+          command="grep -n 'SPELL_IOUS' more-than-a-hack-2027/evaluation/possession_metrics.py",
+          recomputed=False, display=".5", note="the middle threshold of the averaged band")
+
+    # -- the concept section's toy passage: illustrative, not measured
+    m.add("demo_ingap_ph", 0.8, source="synthetic illustration (this page)",
+          command=cmd + "demo_ingap_ph", recomputed=False, display=".8",
+          note="the toy frame's ball-free P(H); illustrative, not a measurement")
+    m.add("demo_split_iou", round(4.0 / 12.0, 4), source="synthetic labels (one 12 s possession, split 4/4/4)",
+          command=cmd + "demo_split_iou", recomputed=True, tolerance=1e-9, display=".33",
+          note="each 4 s half against the 12 s host: 4 shared / 12 union")
+    m.add("demo_continuous_iou", 1.0, source="synthetic labels (one 12 s possession)",
+          command=cmd + "demo_continuous_iou", recomputed=True, tolerance=1e-9, display="1.00",
+          note="one continuous 12 s spell against the 12 s host")
+
 
 def build():
     m = Manifest()
@@ -804,6 +936,7 @@ def build():
     _match_numbers(m)
     _practice_shape(m)
     _metric_demo(m)
+    _explain_demo(m)
     _dev_ref(m)
     _digest(m)
     return {

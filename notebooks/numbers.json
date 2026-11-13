@@ -42,6 +42,24 @@
       "tolerance": 0.0,
       "value": 0.0114
     },
+    "attrib_floor_hi": {
+      "command": "grep -n -m1 '\\| \\*\\*floor\\*\\* \\| \\.4144 \\| \\*\\*\\+\\.0114\\*\\* \\| \\[\\+\\.0079, \\+(\\.0149)\\]' research/E98_attribution.md",
+      "display": "+.0149",
+      "note": "game-cluster interval at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0149
+    },
+    "attrib_floor_lo": {
+      "command": "grep -n -m1 '\\| \\*\\*floor\\*\\* \\| \\.4144 \\| \\*\\*\\+\\.0114\\*\\* \\| \\[\\+(\\.0079),' research/E98_attribution.md",
+      "display": "+.0079",
+      "note": "game-cluster interval at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0079
+    },
     "attrib_grown": {
       "command": "grep -n -m1 '\\| \\*\\*grown D\\*\\* \\| \\.4213 \\| \\*\\*(\\+\\.0045)\\*\\*' research/E98_attribution.md",
       "display": "+.0045",
@@ -50,6 +68,24 @@
       "source": "research/E98_attribution.md",
       "tolerance": 0.0,
       "value": 0.0045
+    },
+    "attrib_grown_hi": {
+      "command": "grep -n -m1 '\\| \\*\\*grown D\\*\\* \\| \\.4213 \\| \\*\\*\\+\\.0045\\*\\* \\| \\[\\+\\.0029, \\+(\\.0060)\\]' research/E98_attribution.md",
+      "display": "+.0060",
+      "note": "game-cluster interval at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.006
+    },
+    "attrib_grown_lo": {
+      "command": "grep -n -m1 '\\| \\*\\*grown D\\*\\* \\| \\.4213 \\| \\*\\*\\+\\.0045\\*\\* \\| \\[\\+(\\.0029),' research/E98_attribution.md",
+      "display": "+.0029",
+      "note": "game-cluster interval at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0029
     },
     "attrib_ingap_seed0": {
       "command": "grep -n -m1 '\\| \\*\\*in-gap\\*\\* \\| \\.4267 \\| \\*\\*(\u2212\\.0009)\\*\\*' research/E98_attribution.md",
@@ -77,6 +113,24 @@
       "source": "research/E98_attribution.md",
       "tolerance": 0.0,
       "value": 0.0062
+    },
+    "attrib_subgap_hi": {
+      "command": "grep -n -m1 '\\| \\*\\*sub-gap\\*\\* \\| \\.4195 \\| \\*\\*\\+\\.0062\\*\\* \\| \\[\\+\\.0050, \\+(\\.0074)\\]' research/E98_attribution.md",
+      "display": "+.0074",
+      "note": "game-cluster interval at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.0074
+    },
+    "attrib_subgap_lo": {
+      "command": "grep -n -m1 '\\| \\*\\*sub-gap\\*\\* \\| \\.4195 \\| \\*\\*\\+\\.0062\\*\\* \\| \\[\\+(\\.0050),' research/E98_attribution.md",
+      "display": "+.0050",
+      "note": "game-cluster interval at master, seed 0",
+      "recomputed": false,
+      "source": "research/E98_attribution.md",
+      "tolerance": 0.0,
+      "value": 0.005
     },
     "attrib_sum": {
       "command": "grep -n -m1 'grown D \\+ sub-gap \\+ floor\\*\\* \\| \\*\\*(\\+\\.0221)\\*\\*' research/E98_attribution.md",
@@ -233,6 +287,24 @@
       "tolerance": 0.0,
       "value": 138
     },
+    "demo_continuous_iou": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_continuous_iou",
+      "display": "1.00",
+      "note": "one continuous 12 s spell against the 12 s host",
+      "recomputed": true,
+      "source": "synthetic labels (one 12 s possession)",
+      "tolerance": 1e-09,
+      "value": 1.0
+    },
+    "demo_ingap_ph": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_ingap_ph",
+      "display": ".8",
+      "note": "the toy frame's ball-free P(H); illustrative, not a measurement",
+      "recomputed": false,
+      "source": "synthetic illustration (this page)",
+      "tolerance": 0.0,
+      "value": 0.8
+    },
     "demo_iou2": {
       "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_iou2",
       "display": "0.50",
@@ -322,6 +394,15 @@
       "source": "organizer metric, synthetic labels",
       "tolerance": 1e-09,
       "value": 0.0
+    },
+    "demo_split_iou": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show demo_split_iou",
+      "display": ".33",
+      "note": "each 4 s half against the 12 s host: 4 shared / 12 union",
+      "recomputed": true,
+      "source": "synthetic labels (one 12 s possession, split 4/4/4)",
+      "tolerance": 1e-09,
+      "value": 0.3333
     },
     "e25_ci_high": {
       "command": "grep -n -m1 '85\\.6% \\[80\\.8, (89\\.2)\\]' work/FINDINGS.md",
@@ -467,6 +548,96 @@
       "tolerance": 0.0,
       "value": 0.002
     },
+    "explain_clean": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_clean",
+      "display": "1.00",
+      "note": "exact answer to the synthetic timeline",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 1.0
+    },
+    "explain_flicker": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker",
+      "display": ".74",
+      "note": "one frame of D near the middle of the 8 s spell",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.7429
+    },
+    "explain_flicker_f1_03": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker_f1_03",
+      "display": ".8571",
+      "note": "flicker case, F1 at IoU 0.3",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.8571
+    },
+    "explain_flicker_f1_04": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker_f1_04",
+      "display": ".8571",
+      "note": "flicker case, F1 at IoU 0.4",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.8571
+    },
+    "explain_flicker_f1_05": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker_f1_05",
+      "display": ".8571",
+      "note": "flicker case, F1 at IoU 0.5",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.8571
+    },
+    "explain_flicker_f1_06": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker_f1_06",
+      "display": ".5714",
+      "note": "flicker case, F1 at IoU 0.6",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.5714
+    },
+    "explain_flicker_f1_07": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker_f1_07",
+      "display": ".5714",
+      "note": "flicker case, F1 at IoU 0.7",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.5714
+    },
+    "explain_flicker_iou_hi": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker_iou_hi",
+      "display": "0.500",
+      "note": "the 100-frame half of the host",
+      "recomputed": true,
+      "source": "synthetic labels (one true 200-frame spell)",
+      "tolerance": 1e-09,
+      "value": 0.5
+    },
+    "explain_flicker_iou_lo": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_flicker_iou_lo",
+      "display": "0.495",
+      "note": "the 99-frame half of the host",
+      "recomputed": true,
+      "source": "synthetic labels (one true 200-frame spell)",
+      "tolerance": 1e-09,
+      "value": 0.495
+    },
+    "explain_missed": {
+      "command": "cd solution && .venv/bin/python scripts/walkthrough_numbers.py --show explain_missed",
+      "display": ".80",
+      "note": "the 1 s spell predicted D; nothing else wrong",
+      "recomputed": true,
+      "source": "organizer metric, synthetic labels",
+      "tolerance": 1e-09,
+      "value": 0.8
+    },
     "external_inplay_rate": {
       "command": "grep -n -m1 'games average \\*\\*55\\.56 \u00b1 6\\.37 live min and (58\\.21) \u00b1 (6\\.38)% share\\*\\*' research/E105_inplay_rate.md",
       "display": "58.21%",
@@ -524,6 +695,33 @@
       "source": "work/FINDINGS.md",
       "tolerance": 0.0,
       "value": 0.482
+    },
+    "floor_false_short": {
+      "command": "grep -n -m1 '~(\\d+) false positives' research/E99_floor_recheck.md",
+      "display": "380",
+      "note": "false positives removed by the same rule",
+      "recomputed": false,
+      "source": "research/E99_floor_recheck.md",
+      "tolerance": 0.0,
+      "value": 380
+    },
+    "floor_real_short": {
+      "command": "grep -n -m1 '\\*\\*(84) of 464\\*\\* current sub-1\\.5 s spells' research/E99_floor_recheck.md",
+      "display": "84",
+      "note": "real sub-1.5 s possessions deleted by the floor at the easiest IoU",
+      "recomputed": false,
+      "source": "research/E99_floor_recheck.md",
+      "tolerance": 0.0,
+      "value": 84
+    },
+    "floor_short_total": {
+      "command": "grep -n -m1 '\\*\\*84 of (464)\\*\\* current sub-1\\.5 s spells' research/E99_floor_recheck.md",
+      "display": "464",
+      "note": "sub-1.5 s predicted spells in the 10 practice games",
+      "recomputed": false,
+      "source": "research/E99_floor_recheck.md",
+      "tolerance": 0.0,
+      "value": 464
     },
     "fps": {
       "command": "grep -n '^FPS' solution/possession/evaluate.py",
@@ -590,6 +788,15 @@
       "source": "work/FINDINGS.md",
       "tolerance": 0.0,
       "value": 0.93
+    },
+    "gate_six_draw": {
+      "command": "grep -n -m1 'gate \u2212 Baseline\\+.*?\\*\\*(\\+\\.0729)\\*\\*' research/E118_seed_cluster.md",
+      "display": "+.0729",
+      "note": "gate - Baseline+ over six degradation draws; the frozen three-seed reference difference is .0728",
+      "recomputed": false,
+      "source": "research/E118_seed_cluster.md",
+      "tolerance": 0.0,
+      "value": 0.0729
     },
     "geom_nearest_dev": {
       "command": "grep -n -m1 'median nearest (2\\.29) vs 2\\.35' research/E78_geometry_harshness.md",
@@ -780,6 +987,51 @@
       "tolerance": 0.0,
       "value": -0.009
     },
+    "ingap_added_spells": {
+      "command": "grep -n -m1 '\\*\\*(\\+2,289) \\(\\+4\\.1%\\)\\*\\*' research/E112_ingap_marginal.md",
+      "display": "2,289",
+      "note": "post-floor spells of 1.5 s or more added, over 180 cell-games",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": 2289
+    },
+    "ingap_cells_pos": {
+      "command": "grep -n -m1 '3/10 games negative,\\s*(6/6) primary cells positive' research/E112_ingap_marginal.md",
+      "display": "6/6",
+      "note": "primary cells where the marginal is non-negative",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": "6/6"
+    },
+    "ingap_drop_two_thirds": {
+      "command": "grep -n -m1 '(Two thirds) of the \\.0035 loss is' research/E112_ingap_marginal.md",
+      "display": "two-thirds",
+      "note": "share of the drop from +.0052 taken by grown D and the floor",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": "two-thirds"
+    },
+    "ingap_flicker_after": {
+      "command": "grep -n -m1 '2,778 \\(\\*\\*(4\\.18)%\\*\\*\\)' research/E112_ingap_marginal.md",
+      "display": "4.18%",
+      "note": "share of pre-floor spells under 1 s with the decoder",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": 0.0418
+    },
+    "ingap_flicker_before": {
+      "command": "grep -n -m1 '4,066 \\(\\*\\*(6\\.25)%\\*\\*\\)' research/E112_ingap_marginal.md",
+      "display": "6.25%",
+      "note": "share of pre-floor spells under 1 s without the decoder",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": 0.0625
+    },
     "ingap_marginal": {
       "command": "grep -n -m1 'in-gap marginal \\(headline, 6 primary\\)\\*\\* \\| \\*\\*(\\+\\.0017)' research/E112_ingap_marginal.md",
       "display": "+.0017",
@@ -807,6 +1059,15 @@
       "tolerance": 0.0,
       "value": 0.0004
     },
+    "ingap_neg_games": {
+      "command": "grep -n -m1 '\\*\\*\\+\\.0017 \\[\\+(?:\\.0004),\\+(?:\\.0030)\\], (3/10) games negative' research/E112_ingap_marginal.md",
+      "display": "3/10",
+      "note": "games where removing the decoder helps",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": "3/10"
+    },
     "ingap_new": {
       "command": "grep -n -m1 'in-gap decoder \\+\\.0816 \u2192 (\\+\\.006)' work/FINDINGS.md",
       "display": "+.006",
@@ -831,6 +1092,33 @@
       "source": "solution/possession/dev_v1.py (compare_dev_v1)",
       "tolerance": 5e-05,
       "value": 0.0052
+    },
+    "ingap_over_gate_hi": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": "+.0065",
+      "note": "gate-only in-gap marginal, game-cluster interval",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (compare_dev_v1)",
+      "tolerance": 5e-05,
+      "value": 0.0065
+    },
+    "ingap_over_gate_lo": {
+      "command": "cd solution && .venv/bin/python -c \"from possession import dev_v1; r=dev_v1.reference_results(); print({k: round(v.summary()['headline'],4) for k,v in r.items()})\"",
+      "display": "+.0038",
+      "note": "gate-only in-gap marginal, game-cluster interval",
+      "recomputed": true,
+      "source": "solution/possession/dev_v1.py (compare_dev_v1)",
+      "tolerance": 5e-05,
+      "value": 0.0038
+    },
+    "ingap_removed_short": {
+      "command": "grep -n -m1 '\\*\\*\u2212(\\d+)\\*\\* \\|' research/E112_ingap_marginal.md",
+      "display": "921",
+      "note": "sub-1.5 s spells removed before the floor; stored negative",
+      "recomputed": false,
+      "source": "research/E112_ingap_marginal.md",
+      "tolerance": 0.0,
+      "value": -921
     },
     "ingap_seed_hi": {
       "command": "grep -n -m1 'max\u2212min: \u2212\\.0009 to (\\+\\.0031)' research/E112_ingap_marginal.md",
@@ -885,6 +1173,15 @@
       "source": "research/E105_inplay_rate.md",
       "tolerance": 0.0,
       "value": -0.46
+    },
+    "iou_mid": {
+      "command": "grep -n 'SPELL_IOUS' more-than-a-hack-2027/evaluation/possession_metrics.py",
+      "display": ".5",
+      "note": "the middle threshold of the averaged band",
+      "recomputed": false,
+      "source": "the organizer's spellF1 band (SPELL_IOUS)",
+      "tolerance": 0.0,
+      "value": 0.5
     },
     "kick_recall_high": {
       "command": "grep -n -m1 'Recall 75 to (83%) on clean data' solution/docs/WHAT_WE_TRIED.md",

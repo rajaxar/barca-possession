@@ -16,13 +16,13 @@
 
 **Baseline+.** Our first entry. Nearest player within 2.5 meters owns the ball, otherwise the last owner keeps it. Short flickers are held back and ball-out-of-play is dead.
 
-**Shipped entry.** The file we would submit now: Baseline+, then the stoppage rule, then the in-gap decoder.
+**Shipped entry.** The submitted file: Baseline+, then the stoppage rule, grown stoppages, the in-gap decoder, the sub-gap rule and the short-spell floor.
 
 **Practice matches.** Other professional matches with public answers, used to select methods. The frozen practice set is 10 matches (German league and Metrica). A second set of 20 SkillCorner matches is used only for who-has-the-ball questions.
 
 **Degrading.** Changing a clean practice match so it looks like our data: ball dropped where ours drops, smoothed, with matching gaps. Leaks that only exist in clean data are removed at the same time.
 
-**Ball-visible setting.** The share of stoppages in which the ball stays visible in a practice match. We cannot measure it exactly for our match, so methods are tested across a range, 5% to 23% for the main cells.
+**Ball-visible setting.** The share of stoppages in which the ball stays visible in a practice match. We cannot measure it exactly for our match, so methods are tested across a range, 5% to 23% for the main settings.
 
 **Gap.** A stretch where the tracking has no ball.
 
@@ -31,6 +31,8 @@
 **Resting-ball moment.** The short stretch inside a stoppage when the ball is visible and not moving.
 
 **Grown stoppage.** A resting-ball moment extended to the whole stoppage around it, out to a set radius from the ball.
+
+**Short-spell floor.** Any possession under 1.5 seconds becomes dead ball.
 
 **Sub-gap rule.** A second stoppage rule that works inside missing-ball gaps the main rule left alone.
 
